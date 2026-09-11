@@ -95,7 +95,7 @@ export function registerChatApi(app: FastifyInstance): void {
       })
 
       // Providers that don't support function calling get a tools-free system prompt
-      const NO_TOOLS_PROVIDERS = new Set(['deepseek', 'mimo', 'custom'])
+      const NO_TOOLS_PROVIDERS = new Set(['deepseek', 'mimo', 'custom', 'opencode-zen', 'opencode-go'])
       const hasTools = !NO_TOOLS_PROVIDERS.has(backend) && !backend.startsWith('custom-')
 
       // Build system prompt, optionally with article context

@@ -57,6 +57,14 @@ export async function runChatTurn(provider: string, params: ChatTurnParams): Pro
     const { getCustomClient } = await import('../providers/llm/custom.js')
     return runOpenAITurn(params, getCustomClient(provider === 'custom' ? undefined : provider), { noTools: true })
   }
+  if (provider === 'opencode-zen' || provider === 'opencode-go') {
+    const { getOpenCodeApiKey, getOpenCodeClient } = await import('../providers/llm/opencode-gateway.js')
+    if (!getOpenCodeApiKey(provider)) {
+      throw new Error(`${provider.toUpperCase()}_KEY_NOT_SET`)
+    }
+    const { runOpenAITurn } = await import('./adapter-openai.js')
+    return runOpenAITurn(params, getOpenCodeClient(provider), { noTools: true })
+  }
   if (provider === 'gemini') {
     const { runGeminiTurn } = await import('./adapter-gemini.js')
     return runGeminiTurn(params)
