@@ -191,6 +191,42 @@ describe('PATCH /api/settings/preferences — provider-model validation', () => 
     expect(res.json().error).toMatch(/not valid for provider/)
   })
 
+  it('accepts dynamic models for DeepSeek provider', async () => {
+    const deepseekPairs: Array<[string, string]> = [
+      ['chat.provider', 'chat.model'],
+      ['summary.provider', 'summary.model'],
+      ['translate.provider', 'translate.model'],
+    ]
+    for (const [providerKey, modelKey] of deepseekPairs) {
+      const res = await app.inject({
+        method: 'PATCH',
+        url: '/api/settings/preferences',
+        headers: json,
+        payload: {
+          [providerKey]: 'deepseek',
+          [modelKey]: 'deepseek-v4-pro',
+        },
+      })
+      expect(res.statusCode).toBe(200)
+      expect(res.json()[providerKey]).toBe('deepseek')
+      expect(res.json()[modelKey]).toBe('deepseek-v4-pro')
+    }
+  })
+
+  it('accepts arbitrary ollama model name for ollama provider', async () => {
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/api/settings/preferences',
+      headers: json,
+      payload: {
+        'summary.provider': 'ollama',
+        'summary.model': 'llama3:70b',
+      },
+    })
+    expect(res.statusCode).toBe(200)
+    expect(res.json()['summary.model']).toBe('llama3:70b')
+  })
+
   it('skips validation when provider or model is empty', async () => {
     // Only set provider without model — should pass (no model to validate against)
     const res = await app.inject({
@@ -322,6 +358,66 @@ describe('POST /api/settings/preferences', () => {
 // =========================================================================
 
 describe('PATCH /api/settings/preferences — on/off toggles', () => {
+  it('accepts on/off for summary.auto', async () => {
+    const resOn = await app.inject({
+      method: 'PATCH',
+      url: '/api/settings/preferences',
+      headers: json,
+      payload: { 'summary.auto': 'on' },
+    })
+    expect(resOn.statusCode).toBe(200)
+    expect(resOn.json()['summary.auto']).toBe('on')
+
+    const resOff = await app.inject({
+      method: 'PATCH',
+      url: '/api/settings/preferences',
+      headers: json,
+      payload: { 'summary.auto': 'off' },
+    })
+    expect(resOff.statusCode).toBe(200)
+    expect(resOff.json()['summary.auto']).toBe('off')
+  })
+
+  it('accepts on/off for translate.auto', async () => {
+    const resOn = await app.inject({
+      method: 'PATCH',
+      url: '/api/settings/preferences',
+      headers: json,
+      payload: { 'translate.auto': 'on' },
+    })
+    expect(resOn.statusCode).toBe(200)
+    expect(resOn.json()['translate.auto']).toBe('on')
+
+    const resOff = await app.inject({
+      method: 'PATCH',
+      url: '/api/settings/preferences',
+      headers: json,
+      payload: { 'translate.auto': 'off' },
+    })
+    expect(resOff.statusCode).toBe(200)
+    expect(resOff.json()['translate.auto']).toBe('off')
+  })
+
+  it('rejects invalid value for summary.auto', async () => {
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/api/settings/preferences',
+      headers: json,
+      payload: { 'summary.auto': 'yes' },
+    })
+    expect(res.statusCode).toBe(400)
+  })
+
+  it('rejects invalid value for translate.auto', async () => {
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/api/settings/preferences',
+      headers: json,
+      payload: { 'translate.auto': 'yes' },
+    })
+    expect(res.statusCode).toBe(400)
+  })
+
   it('accepts on/off for auto_mark_read', async () => {
     const resOn = await app.inject({
       method: 'PATCH',
@@ -350,6 +446,39 @@ describe('PATCH /api/settings/preferences — on/off toggles', () => {
       payload: { 'reading.auto_mark_read': 'yes' },
     })
     expect(res.statusCode).toBe(400)
+  })
+
+  it('accepts translate source/target language prefs', async () => {
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/api/settings/preferences',
+      headers: json,
+      payload: {
+        'translate.target_lang': 'en',
+        'translate.source_lang': 'ja',
+      },
+    })
+    expect(res.statusCode).toBe(200)
+    expect(res.json()['translate.target_lang']).toBe('en')
+    expect(res.json()['translate.source_lang']).toBe('ja')
+  })
+
+  it('rejects invalid translate source/target language prefs', async () => {
+    const resTarget = await app.inject({
+      method: 'PATCH',
+      url: '/api/settings/preferences',
+      headers: json,
+      payload: { 'translate.target_lang': 'fr' },
+    })
+    expect(resTarget.statusCode).toBe(400)
+
+    const resSource = await app.inject({
+      method: 'PATCH',
+      url: '/api/settings/preferences',
+      headers: json,
+      payload: { 'translate.source_lang': 'fr' },
+    })
+    expect(resSource.statusCode).toBe(400)
   })
 
   it('rejects invalid unread_indicator value', async () => {
@@ -565,7 +694,7 @@ describe('POST /api/settings/api-keys/:provider', () => {
   it('returns 400 for unknown provider', async () => {
     const res = await app.inject({
       method: 'POST',
-      url: '/api/settings/api-keys/deepseek',
+      url: '/api/settings/api-keys/unknown-provider',
       headers: json,
       payload: { apiKey: 'key' },
     })
@@ -796,4 +925,3 @@ describe('vLLM endpoints', () => {
     expect(getSetting('vllm.base_url')).toBe('http://vllm:8000')
   })
 })
-

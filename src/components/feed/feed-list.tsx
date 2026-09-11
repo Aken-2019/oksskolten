@@ -11,6 +11,7 @@ import { useFetchProgressContext } from '../../contexts/fetch-progress-context'
 import { toast } from 'sonner'
 import { useFeedActions } from '../../hooks/use-feed-actions'
 import { useFeedDragDrop } from '../../hooks/use-feed-drag-drop'
+import { useCategoryDragDrop } from '../../hooks/use-category-drag-drop'
 import { useFeedSelection } from '../../hooks/use-feed-selection'
 import { useFeedBulkActions } from '../../hooks/use-feed-bulk-actions'
 import { useClipFeedId } from '../../hooks/use-clip-feed-id'
@@ -191,6 +192,11 @@ export function FeedList({ isOpen, onClose, onBackdropClose, onCollapse, onMarkA
     dragOverTarget, isDragging,
     handleDragStart, handleDragOver, handleDragLeave, handleDrop, handleDragEnd,
   } = useFeedDragDrop({ feeds, mutateFeeds, onDropComplete: clearSelection })
+
+  const {
+    isCategoryDrag,
+    handleCategoryDragStart, handleCategoryDrop, handleCategoryDragEnd,
+  } = useCategoryDragDrop({ categories, mutateCategories })
 
   const {
     bulkDeleteConfirm, setBulkDeleteConfirm,
@@ -399,9 +405,12 @@ export function FeedList({ isOpen, onClose, onBackdropClose, onCollapse, onMarkA
     return (
       <div
         key={category.id}
+        draggable={!isRenaming}
+        onDragStart={e => handleCategoryDragStart(e, category)}
+        onDragEnd={handleCategoryDragEnd}
         onDragOver={e => handleDragOver(e, category.id)}
         onDragLeave={handleDragLeave}
-        onDrop={e => handleDrop(e, category.id)}
+        onDrop={e => isCategoryDrag(e) ? void handleCategoryDrop(e, category) : handleDrop(e, category.id)}
         className={`rounded-lg transition-colors ${dragOverTarget === category.id ? 'bg-hover-sidebar' : ''}`}
       >
         <CategoryContextMenu
@@ -470,12 +479,21 @@ export function FeedList({ isOpen, onClose, onBackdropClose, onCollapse, onMarkA
       >
         <FeedListHeader onClose={onClose} onCollapse={onCollapse} />
 
+        {/* Search — standalone between header and nav */}
+        <div className="px-2 pt-1 pb-1">
+          <button
+            type="button"
+            onClick={() => setSearchOpen(true)}
+            className="group/search w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-sm text-muted hover:bg-hover-sidebar hover:text-text transition-colors border border-border"
+          >
+            <Search size={16} strokeWidth={1.5} className="shrink-0" />
+            <span className="flex-1 text-left">{t('search.title')}</span>
+            <kbd className="hidden md:inline-flex text-[11px] bg-hover px-1.5 py-1 rounded opacity-0 group-hover/search:opacity-100 transition-opacity items-center gap-0"><span className="w-2.5 h-3 inline-flex items-center justify-center"><Command className="w-2.5 h-2.5" /></span><span className="w-3 h-3 inline-flex items-center justify-center"><ArrowBigUp className="w-2.5 h-2.5" /></span><span className="w-3 h-3 inline-flex items-center justify-center leading-none">K</span></kbd>
+          </button>
+        </div>
+
         <nav className="flex-1 overflow-y-auto overscroll-contain py-2 px-2">
           <SidebarNavItem icon={Inbox} label={t('feeds.inbox')} selected={isInbox && selectedFeedId === null} onClick={() => { void navigate('/inbox'); onClose() }} badge={totalUnread > 0 ? <UnreadBadge count={totalUnread} /> : undefined} />
-
-          <SidebarNavItem icon={Search} label={t('search.title')} onClick={() => setSearchOpen(true)} className="group/search">
-            <kbd className="hidden md:inline-flex text-[11px] text-muted bg-hover px-1.5 py-1 rounded opacity-0 group-hover/search:opacity-100 transition-opacity items-center gap-0"><span className="w-2.5 h-3 inline-flex items-center justify-center"><Command className="w-2.5 h-2.5" /></span><span className="w-3 h-3 inline-flex items-center justify-center"><ArrowBigUp className="w-2.5 h-2.5" /></span><span className="w-3 h-3 inline-flex items-center justify-center leading-none">K</span></kbd>
-          </SidebarNavItem>
 
           <SidebarNavItem icon={Bookmark} label={t('feeds.bookmarks')} selected={isBookmarks} onClick={() => { void navigate('/bookmarks'); onClose() }} badge={(feedsData?.bookmark_count ?? 0) > 0 ? <UnreadBadge count={feedsData!.bookmark_count} /> : undefined} />
 

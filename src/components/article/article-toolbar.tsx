@@ -1,7 +1,7 @@
 import { useNavigate } from 'react-router-dom'
 import { ActionChip } from '../ui/action-chip'
 import { ChatInlineTrigger } from '../chat/chat-inline'
-import { Bookmark, ThumbsUp, CloudUpload, CloudCheck, Trash2, Languages, Sparkles } from 'lucide-react'
+import { Bookmark, ThumbsUp, CloudUpload, CloudCheck, Trash2, Languages, Sparkles, Sun, Moon, Monitor } from 'lucide-react'
 import { useI18n } from '../../lib/i18n'
 import type { ArticleDetail } from '../../../shared/types'
 
@@ -10,13 +10,12 @@ interface ArticleToolbarProps {
   chatPosition: string
   chatOpen: boolean
   onChatToggle: () => void
-  isUserLang: boolean
   hasTranslation: boolean
   translating: boolean
-  onTranslate: () => void
+  onTranslate: (force?: boolean) => void
   summary: string | null
   summarizing: boolean
-  onSummarize: () => void
+  onSummarize: (force?: boolean) => void
   isBookmarked: boolean
   isLiked: boolean
   archivingImages: boolean
@@ -24,6 +23,8 @@ interface ArticleToolbarProps {
   onToggleLike: () => void
   onArchiveImages: () => void
   onDelete: () => void
+  colorMode: 'light' | 'dark' | 'system'
+  onToggleColorMode: () => void
 }
 
 export function ArticleToolbar({
@@ -31,7 +32,6 @@ export function ArticleToolbar({
   chatPosition,
   chatOpen,
   onChatToggle,
-  isUserLang,
   hasTranslation,
   translating,
   onTranslate,
@@ -45,6 +45,8 @@ export function ArticleToolbar({
   onToggleLike,
   onArchiveImages,
   onDelete,
+  colorMode,
+  onToggleColorMode,
 }: ArticleToolbarProps) {
   const navigate = useNavigate()
   const { t } = useI18n()
@@ -65,21 +67,25 @@ export function ArticleToolbar({
           <path d="M4 1h7v7M11 1L5 7" />
         </svg>
       </ActionChip>
-      {summary === null && !summarizing && (
-        <ActionChip onClick={onSummarize}>
-          <Sparkles className="w-3.5 h-3.5" />
-          {t('article.summarize')}
-        </ActionChip>
-      )}
+      <ActionChip
+        disabled={summarizing}
+        onClick={summarizing ? undefined : () => onSummarize(summary !== null)}
+        className={summarizing ? 'opacity-70 cursor-not-allowed' : undefined}
+      >
+        <Sparkles className={`w-3.5 h-3.5 ${summarizing ? 'animate-spin' : ''}`} />
+        {summarizing ? t('article.summarizing') : summary === null ? t('article.summarize') : t('article.regenerateSummary')}
+      </ActionChip>
       {chatPosition === 'inline' && (
         <ChatInlineTrigger active={chatOpen} onToggle={onChatToggle} />
       )}
-      {!isUserLang && !hasTranslation && !translating && (
-        <ActionChip onClick={onTranslate}>
-          <Languages className="w-3.5 h-3.5" />
-          {t('article.translate')}
-        </ActionChip>
-      )}
+      <ActionChip
+        disabled={translating}
+        onClick={translating ? undefined : () => onTranslate(hasTranslation)}
+        className={translating ? 'opacity-70 cursor-not-allowed' : undefined}
+      >
+        <Languages className={`w-3.5 h-3.5 ${translating ? 'animate-spin' : ''}`} />
+        {translating ? t('article.translating') : hasTranslation ? t('article.retranslate') : t('article.translate')}
+      </ActionChip>
       <ActionChip active={!!isBookmarked} onClick={onToggleBookmark} aria-pressed={!!isBookmarked} tooltip={isBookmarked ? t('article.removeBookmark') : t('article.addBookmark')}>
         <Bookmark
           className="w-3.5 h-3.5"
@@ -121,6 +127,9 @@ export function ArticleToolbar({
           {t('article.delete')}
         </ActionChip>
       )}
+      <ActionChip onClick={onToggleColorMode} tooltip={colorMode}>
+        {colorMode === 'dark' ? <Moon className="w-3.5 h-3.5" /> : colorMode === 'light' ? <Sun className="w-3.5 h-3.5" /> : <Monitor className="w-3.5 h-3.5" />}
+      </ActionChip>
     </div>
   )
 }

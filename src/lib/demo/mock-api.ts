@@ -140,10 +140,13 @@ export async function demoFetcher(url: string): Promise<unknown> {
       'summary.provider': 'anthropic',
       'summary.model': 'claude-haiku-4-5-20251001',
       'summary.max_tokens': null,
+      'summary.auto': 'off',
+      'translate.auto': 'off',
       'translate.provider': 'deepl',
       'translate.model': '',
       'translate.max_tokens': null,
       'translate.target_lang': null,
+      'translate.source_lang': null,
     }
   }
 

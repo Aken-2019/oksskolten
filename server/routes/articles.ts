@@ -11,8 +11,22 @@ import {
   getArticlesByIds,
   markArticleSeen,
   markArticlesSeen,
+  markArticlesUnseen,
+  markAllSeenByFeed,
+  markAllSeenGlobal,
+  markAllSeenByCategory,
+  markAllUnseenByFeed,
+  markAllUnseenGlobal,
+  markAllUnseenByCategory,
   recordArticleRead,
   markArticleBookmarked,
+  batchMarkBookmarked,
+  clearAllBookmarks,
+  batchMarkLiked,
+  clearAllLikes,
+  batchDeleteArticles,
+  clearArticlesByFeed,
+  clearAllHistory,
   markArticleLiked,
   updateArticleContent,
   updateScore,
@@ -28,7 +42,7 @@ import type { MeiliArticleDoc } from '../search/client.js'
 import { buildMeiliFilter, meiliSearch } from '../search/client.js'
 import { isSearchReady, syncArticleToSearch } from '../search/sync.js'
 import { requireJson } from '../auth.js'
-import { summarizeArticle, translateArticle, streamSummarizeArticle, streamTranslateArticle, fetchArticleContent } from '../fetcher.js'
+import { summarizeArticle, translateArticle, streamSummarizeArticle, streamTranslateArticle, fetchArticleContent, translateTitle } from '../fetcher.js'
 import type { AiTextResult } from '../fetcher.js'
 import { archiveArticleImages, isImageArchivingEnabled, deleteArticleImages } from '../fetcher/article-images.js'
 import { getSetting } from '../db/settings.js'
@@ -105,8 +119,12 @@ const BookmarkBody = z.object({ bookmarked: z.boolean({ message: 'bookmarked mus
 const LikeBody = z.object({ liked: z.boolean({ message: 'liked must be a boolean' }) })
 const BatchSeenBody = z.object({
   ids: z.array(z.number()).min(1, 'ids must be a non-empty array').max(MAX_BATCH_SEEN, `Maximum ${MAX_BATCH_SEEN} ids per request`),
+  seen: z.boolean().default(true),
 })
-const StreamQuery = z.object({ stream: z.string().optional() })
+const StreamQuery = z.object({
+  stream: z.string().optional(),
+  force: z.string().optional(),
+})
 const FilenameParams = z.object({ filename: z.string() })
 
 // --- Known error codes that the frontend can i18n-translate ---
@@ -151,8 +169,11 @@ function createAiHandler(config: AiHandlerConfig) {
       return
     }
 
+    const { stream, force } = StreamQuery.parse(request.query)
+    const forceRecompute = force === '1' || force === 'true'
+
     const cached = config.getCached(article)
-    if (cached) {
+    if (cached && !forceRecompute) {
       reply.send({ text: cached, cached: true })
       return
     }
@@ -167,8 +188,6 @@ function createAiHandler(config: AiHandlerConfig) {
       reply.status(400).send({ error: validationError })
       return
     }
-
-    const { stream } = StreamQuery.parse(request.query)
 
     try {
       if (stream === '1') {
@@ -430,8 +449,105 @@ export async function articleRoutes(api: FastifyInstance): Promise<void> {
     async (request, reply) => {
       const body = parseOrBadRequest(BatchSeenBody, request.body, reply)
       if (!body) return
-      const result = markArticlesSeen(body.ids)
+      const result = body.seen ? markArticlesSeen(body.ids) : markArticlesUnseen(body.ids)
       reply.send(result)
+    },
+  )
+
+  api.post(
+    '/api/articles/mark-all-seen',
+    { preHandler: [requireJson] },
+    async (request, reply) => {
+      const body = z.object({
+        feed_id: z.number().int().optional(),
+        category_id: z.number().int().optional(),
+        seen: z.boolean().default(true),
+      }).parse(request.body)
+      if (body.seen) {
+        if (body.feed_id) reply.send(markAllSeenByFeed(body.feed_id))
+        else if (body.category_id) reply.send(markAllSeenByCategory(body.category_id))
+        else reply.send(markAllSeenGlobal())
+      } else {
+        if (body.feed_id) reply.send(markAllUnseenByFeed(body.feed_id))
+        else if (body.category_id) reply.send(markAllUnseenByCategory(body.category_id))
+        else reply.send(markAllUnseenGlobal())
+      }
+    },
+  )
+
+  api.post(
+    '/api/articles/batch-like',
+    { preHandler: [requireJson] },
+    async (request, reply) => {
+      const body = parseOrBadRequest(
+        z.object({ ids: z.array(z.number().int()), liked: z.boolean() }),
+        request.body, reply,
+      )
+      if (!body) return
+      batchMarkLiked(body.ids, body.liked)
+      reply.send({ ok: true })
+    },
+  )
+
+  api.post(
+    '/api/articles/clear-likes',
+    async (_request, reply) => {
+      clearAllLikes()
+      reply.send({ ok: true })
+    },
+  )
+
+  api.post(
+    '/api/articles/batch-delete',
+    { preHandler: [requireJson] },
+    async (request, reply) => {
+      const body = parseOrBadRequest(
+        z.object({ ids: z.array(z.number().int()) }),
+        request.body, reply,
+      )
+      if (!body) return
+      batchDeleteArticles(body.ids)
+      reply.send({ ok: true })
+    },
+  )
+
+  api.post(
+    '/api/articles/clear-feed/:feedId',
+    async (request, reply) => {
+      const params = parseOrBadRequest(NumericIdParams, request.params, reply)
+      if (!params) return
+      clearArticlesByFeed(params.id)
+      reply.send({ ok: true })
+    },
+  )
+
+  api.post(
+    '/api/articles/clear-history',
+    async (_request, reply) => {
+      clearAllHistory()
+      reply.send({ ok: true })
+    },
+  )
+
+  api.post(
+    '/api/articles/batch-bookmark',
+    { preHandler: [requireJson] },
+    async (request, reply) => {
+      const body = parseOrBadRequest(
+        z.object({ ids: z.array(z.number().int()), bookmarked: z.boolean() }),
+        request.body, reply,
+      )
+      if (!body) return
+      batchMarkBookmarked(body.ids, body.bookmarked)
+      reply.send({ ok: true })
+    },
+  )
+
+  api.post(
+    '/api/articles/clear-bookmarks',
+    async (_request, reply) => {
+      clearAllBookmarks()
+      reply.send({ ok: true })
     },
   )
 
@@ -498,6 +614,41 @@ export async function articleRoutes(api: FastifyInstance): Promise<void> {
       errorMessage: 'Translation failed',
       errorCode: 'TRANSLATION_FAILED',
     }),
+  )
+
+  // --- Batch title translation ---
+
+  api.post(
+    '/api/articles/translate-titles',
+    { preHandler: [requireJson] },
+    async (request, reply) => {
+      const body = request.body as { ids?: unknown }
+      if (!Array.isArray(body?.ids) || body.ids.some(id => typeof id !== 'number')) {
+        reply.status(400).send({ error: 'ids must be an array of numbers' })
+        return
+      }
+      const ids = body.ids as number[]
+      const targetLang = getTranslateTargetLang()
+
+      const settled = await Promise.allSettled(
+        ids.map(async (id): Promise<{ id: number; title_translated: string } | null> => {
+          const article = getArticleById(id)
+          if (!article || article.lang === targetLang) return null
+          if (article.title_translated) return { id, title_translated: article.title_translated }
+          const translated = await translateTitle(article.title)
+          updateArticleContent(id, { title_translated: translated })
+          return { id, title_translated: translated }
+        }),
+      )
+
+      const results = settled
+        .filter((r): r is PromiseFulfilledResult<{ id: number; title_translated: string }> =>
+          r.status === 'fulfilled' && r.value !== null,
+        )
+        .map(r => r.value)
+
+      reply.send({ results })
+    },
   )
 
   // --- Image archiving ---

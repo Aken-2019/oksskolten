@@ -17,13 +17,17 @@ export interface AiTextResult {
 
 export function detectLanguage(fullText: string): string {
   const sample = fullText.slice(0, 1000)
-  const jaCount = (sample.match(/[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF]/g) || []).length
-  return jaCount / sample.length > 0.1 ? 'ja' : 'en'
+  const len = sample.length || 1
+  const kana = (sample.match(/[\u3040-\u30FF]/g) || []).length  // hiragana + katakana
+  const cjk  = (sample.match(/[\u4E00-\u9FFF]/g) || []).length  // shared CJK ideographs
+  if (kana / len > 0.02) return 'ja'   // hiragana/katakana present \u2192 Japanese
+  if (cjk  / len > 0.1)  return 'zh'   // CJK only, no kana \u2192 Chinese
+  return 'en'
 }
 
 
 function buildSummarizePrompt(fullText: string): string {
-  const lang = getSetting('general.language') || DEFAULT_LANGUAGE
+  const lang = getSetting('summary.target_lang') || getSetting('general.language') || DEFAULT_LANGUAGE
   return `Summarize the following article in ${languageName(lang)}. Follow the format strictly.
 
 ## Format
@@ -43,9 +47,11 @@ ${fullText}`
 }
 
 function buildTranslatePrompt(fullText: string): string {
-  const lang = getSetting('translate.target_lang') || getSetting('general.language') || DEFAULT_LANGUAGE
-  const targetLang = languageName(lang)
-  return `Translate the following article into ${targetLang}.
+  const target = getTargetLang()
+  const source = getSetting('translate.source_lang') || null
+  const sourceLang = source && source !== target ? ` from ${languageName(source)}` : ''
+  const targetLang = languageName(target)
+  return `Translate the following article${sourceLang} into ${targetLang}.
 Translate every word faithfully — do not summarize, compress, or omit anything.
 The translation must be 1:1 with the original text in volume.
 Preserve Markdown formatting. In particular, keep blockquote lines starting with ">".
@@ -140,6 +146,25 @@ export async function streamSummarizeArticle(
   return { summary: r.text, inputTokens: r.inputTokens, outputTokens: r.outputTokens, billingMode: r.billingMode, model: r.model }
 }
 
+export async function translateTitle(title: string): Promise<string> {
+  const provider = getSetting('translate.provider') || TASK_DEFAULTS.translate.provider
+  const targetLang = getTargetLang()
+  const sourceLang = getSetting('translate.source_lang') || null
+  if (provider === 'google-translate') {
+    const result = await googleTranslate(title, targetLang, sourceLang)
+    return result.translatedText
+  }
+  if (provider === 'deepl') {
+    const result = await deeplTranslate(title, targetLang, sourceLang)
+    return result.translatedText
+  }
+  const source = sourceLang && sourceLang !== targetLang ? ` from ${languageName(sourceLang)}` : ''
+  const prompt = `Translate the following article title${source} into ${languageName(targetLang)}. Keep proper nouns, brand names, product names, and technical terms in their original form. Output only the translated title, nothing else.\n\n${title}`
+  const config: AiTaskConfig = { ...translateConfig, buildPrompt: () => prompt }
+  const r = await runAiTask(config, title)
+  return r.text.trim()
+}
+
 export async function translateArticle(fullText: string): Promise<{ fullTextTranslated: string } & AiTextResult> {
   const provider = getSetting('translate.provider') || TASK_DEFAULTS.translate.provider
   if (provider === 'google-translate') {
@@ -176,7 +201,9 @@ function getTargetLang(): string {
 }
 
 async function runGoogleTranslate(fullText: string): Promise<{ fullTextTranslated: string } & AiTextResult> {
-  const result = await googleTranslate(fullText, getTargetLang())
+  const targetLang = getTargetLang()
+  const sourceLang = getSetting('translate.source_lang') || null
+  const result = await googleTranslate(fullText, targetLang, sourceLang)
   return {
     fullTextTranslated: result.translatedText,
     inputTokens: result.characters,
@@ -188,7 +215,9 @@ async function runGoogleTranslate(fullText: string): Promise<{ fullTextTranslate
 }
 
 async function runDeepl(fullText: string): Promise<{ fullTextTranslated: string } & AiTextResult> {
-  const result = await deeplTranslate(fullText, getTargetLang())
+  const targetLang = getTargetLang()
+  const sourceLang = getSetting('translate.source_lang') || null
+  const result = await deeplTranslate(fullText, targetLang, sourceLang)
   return {
     fullTextTranslated: result.translatedText,
     inputTokens: result.characters,
