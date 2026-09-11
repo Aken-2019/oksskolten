@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
-import { useNavigate, useParams, Link } from 'react-router-dom'
+import { useNavigate, useParams } from 'react-router-dom'
 import useSWR, { mutate as globalMutate } from 'swr'
 import { Trash2, ListChecks, Check } from 'lucide-react'
 import { fetcher, apiDelete, apiPost } from '../lib/fetcher'
@@ -260,13 +260,17 @@ export function ChatPage() {
                       {conv.article_title && conv.article_url && (
                         <>
                           <span className="mx-0.5">·</span>
-                          <Link
-                            to={articleUrlToPath(conv.article_url)}
-                            onClick={(e) => e.stopPropagation()}
-                            className="truncate hover:text-accent transition-colors"
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.preventDefault()
+                              e.stopPropagation()
+                              void navigate(articleUrlToPath(conv.article_url!))
+                            }}
+                            className="truncate text-left hover:text-accent transition-colors"
                           >
                             {conv.article_title}
-                          </Link>
+                          </button>
                         </>
                       )}
                     </div>

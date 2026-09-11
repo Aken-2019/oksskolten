@@ -136,17 +136,23 @@ function CardActions({ article, isUnread, onToggleBookmark, onToggleRead, onOpen
         </button>
       )}
       {onOpenExternal && article.url && (
-        <a
-          href={article.url}
-          target="_blank"
-          rel="noopener noreferrer"
+        <button
+          type="button"
           title={t('articles.openExternal')}
-          onClick={e => { e.stopPropagation(); onOpenExternal(article) }}
-          onContextMenu={() => onOpenExternal(article)}
+          onClick={e => {
+            e.preventDefault()
+            e.stopPropagation()
+            // Open in a background tab: window.open fires the anchor-less
+            // navigation, then focus returns to this tab.
+            window.open(article.url, '_blank', 'noopener,noreferrer')
+            window.focus()
+            onOpenExternal(article)
+          }}
+          onContextMenu={e => { e.stopPropagation(); onOpenExternal(article) }}
           className="p-1 rounded text-muted hover:text-accent hover:bg-hover transition-colors"
         >
           <ExternalLink size={14} />
-        </a>
+        </button>
       )}
     </div>
   )
