@@ -72,7 +72,7 @@ describe('useTranslate', () => {
     })
 
     expect(mockStreamPost).toHaveBeenCalledWith(
-      '/api/articles/10/translate?stream=1',
+      '/api/articles/10/translate?stream=1&target_lang=en',
       expect.any(Function),
     )
   })

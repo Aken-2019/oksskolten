@@ -124,6 +124,8 @@ const BatchSeenBody = z.object({
 const StreamQuery = z.object({
   stream: z.string().optional(),
   force: z.string().optional(),
+  /** Explicit target language sent by the client (its UI locale); takes precedence over stored settings */
+  target_lang: z.enum(['ja', 'en', 'zh']).optional(),
 })
 const FilenameParams = z.object({ filename: z.string() })
 
@@ -151,11 +153,11 @@ function extractKnownErrorCode(err: unknown): string | null {
 // --- Shared AI handler for summarize/translate ---
 
 interface AiHandlerConfig {
-  getCached: (article: ArticleDetail) => string | null
-  validate?: (article: ArticleDetail) => string | null
-  streamFn: (fullText: string, onDelta: (d: string) => void) => Promise<{ text: string } & AiTextResult>
-  nonStreamFn: (fullText: string) => Promise<{ text: string } & AiTextResult>
-  applyResult: (articleId: number, text: string) => void
+  getCached: (article: ArticleDetail, targetLang: string) => string | null
+  validate?: (article: ArticleDetail, targetLang: string) => string | null
+  streamFn: (fullText: string, onDelta: (d: string) => void, targetLang: string) => Promise<{ text: string } & AiTextResult>
+  nonStreamFn: (fullText: string, targetLang: string) => Promise<{ text: string } & AiTextResult>
+  applyResult: (articleId: number, text: string, targetLang: string) => void
   errorMessage: string
   errorCode: string
 }
@@ -169,10 +171,13 @@ function createAiHandler(config: AiHandlerConfig) {
       return
     }
 
-    const { stream, force } = StreamQuery.parse(request.query)
+    const parsedQuery = parseOrBadRequest(StreamQuery, request.query, reply)
+    if (!parsedQuery) return
+    const { stream, force, target_lang: targetLangParam } = parsedQuery
     const forceRecompute = force === '1' || force === 'true'
+    const targetLang = targetLangParam ?? getTranslateTargetLang()
 
-    const cached = config.getCached(article)
+    const cached = config.getCached(article, targetLang)
     if (cached && !forceRecompute) {
       reply.send({ text: cached, cached: true })
       return
@@ -183,7 +188,7 @@ function createAiHandler(config: AiHandlerConfig) {
       return
     }
 
-    const validationError = config.validate?.(article)
+    const validationError = config.validate?.(article, targetLang)
     if (validationError) {
       reply.status(400).send({ error: validationError })
       return
@@ -195,14 +200,15 @@ function createAiHandler(config: AiHandlerConfig) {
         const result = await config.streamFn(
           article.full_text,
           (delta) => { sse.send({ type: 'delta', text: delta }) },
+          targetLang,
         )
-        config.applyResult(article.id, result.text)
+        config.applyResult(article.id, result.text, targetLang)
         const usage = formatUsage(result)
         sse.send({ type: 'done', usage })
         sse.end()
       } else {
-        const result = await config.nonStreamFn(article.full_text)
-        config.applyResult(article.id, result.text)
+        const result = await config.nonStreamFn(article.full_text, targetLang)
+        config.applyResult(article.id, result.text, targetLang)
         reply.send({ text: result.text, usage: formatUsage(result) })
       }
     } catch (err) {
@@ -590,25 +596,22 @@ export async function articleRoutes(api: FastifyInstance): Promise<void> {
     '/api/articles/:id/translate',
     { preHandler: [requireJson] },
     createAiHandler({
-      getCached: (article) => {
-        const userLang = getTranslateTargetLang()
-        return article.translated_lang === userLang ? article.full_text_translated : null
+      getCached: (article, targetLang) => {
+        return article.translated_lang === targetLang ? article.full_text_translated : null
       },
-      validate: (article) => {
-        const userLang = getTranslateTargetLang()
-        return article.lang === userLang ? `Article is already in ${userLang}` : null
+      validate: (article, targetLang) => {
+        return article.lang === targetLang ? `Article is already in ${targetLang}` : null
       },
-      streamFn: async (fullText, onDelta) => {
-        const r = await streamTranslateArticle(fullText, onDelta)
+      streamFn: async (fullText, onDelta, targetLang) => {
+        const r = await streamTranslateArticle(fullText, onDelta, targetLang)
         return { text: r.fullTextTranslated, ...r }
       },
-      nonStreamFn: async (fullText) => {
-        const r = await translateArticle(fullText)
+      nonStreamFn: async (fullText, targetLang) => {
+        const r = await translateArticle(fullText, targetLang)
         return { text: r.fullTextTranslated, ...r }
       },
-      applyResult: (articleId, text) => {
-        const userLang = getTranslateTargetLang()
-        updateArticleContent(articleId, { full_text_translated: text, translated_lang: userLang })
+      applyResult: (articleId, text, targetLang) => {
+        updateArticleContent(articleId, { full_text_translated: text, translated_lang: targetLang })
         updateScore(articleId)
       },
       errorMessage: 'Translation failed',
@@ -622,20 +625,22 @@ export async function articleRoutes(api: FastifyInstance): Promise<void> {
     '/api/articles/translate-titles',
     { preHandler: [requireJson] },
     async (request, reply) => {
-      const body = request.body as { ids?: unknown }
+      const body = request.body as { ids?: unknown; target_lang?: unknown }
       if (!Array.isArray(body?.ids) || body.ids.some(id => typeof id !== 'number')) {
         reply.status(400).send({ error: 'ids must be an array of numbers' })
         return
       }
       const ids = body.ids as number[]
-      const targetLang = getTranslateTargetLang()
+      const targetLang = typeof body.target_lang === 'string' && ['ja', 'en', 'zh'].includes(body.target_lang)
+        ? body.target_lang
+        : getTranslateTargetLang()
 
       const settled = await Promise.allSettled(
         ids.map(async (id): Promise<{ id: number; title_translated: string } | null> => {
           const article = getArticleById(id)
           if (!article || article.lang === targetLang) return null
           if (article.title_translated) return { id, title_translated: article.title_translated }
-          const translated = await translateTitle(article.title)
+          const translated = await translateTitle(article.title, targetLang)
           updateArticleContent(id, { title_translated: translated })
           return { id, title_translated: translated }
         }),

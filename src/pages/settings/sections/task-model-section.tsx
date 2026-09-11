@@ -6,6 +6,8 @@ import {
   GEMINI_MODELS,
   OPENAI_MODELS,
   DEEPSEEK_MODELS,
+  OPENCODE_ZEN_MODELS,
+  OPENCODE_GO_MODELS,
   DEFAULT_MODELS,
   PROVIDER_LABELS,
   LLM_API_PROVIDERS,
@@ -340,6 +342,8 @@ function getModelGroups(provider: string): ModelGroup[] {
   if (provider === 'openai') return OPENAI_MODELS
   if (provider === 'deepseek') return DEEPSEEK_MODELS
   if (provider === 'claude-code') return ANTHROPIC_MODELS
+  if (provider === 'opencode-zen') return OPENCODE_ZEN_MODELS
+  if (provider === 'opencode-go') return OPENCODE_GO_MODELS
   return []
 }
 
@@ -811,6 +815,13 @@ function ModelSelect({
     { revalidateOnFocus: false },
   )
 
+  // OpenCode gateways: fetch dynamic model list (shared endpoint shape with deepseek)
+  const { data: opCodeModels } = useSWR<{ models: Array<{ name: string }> }>(
+    provider === 'opencode-zen' || provider === 'opencode-go' ? `/api/settings/${provider}/models` : null,
+    fetcher,
+    { revalidateOnFocus: false },
+  )
+
   const savedCustomModels = useMemo(() => provider === 'custom' ? customModels : [], [provider, customModels])
   const isCustomProvider = provider.startsWith('custom-')
 
@@ -838,10 +849,14 @@ function ModelSelect({
     if (provider === 'mimo') {
       return mimoModels?.models?.map(model => model.name)
     }
+    if (provider === 'opencode-zen' || provider === 'opencode-go') {
+      const dynamic = opCodeModels?.models?.map(model => model.name)
+      return dynamic?.length ? dynamic : staticModelValues
+    }
     if (provider === 'custom') {
       return savedCustomModels
     }
-    if (isCustomProvider) {
+  if (isCustomProvider) {
       return customProviderModels
     }
     return staticModelValues
@@ -851,6 +866,7 @@ function ModelSelect({
     vllmModels?.models,
     deepseekModels?.models,
     mimoModels?.models,
+    opCodeModels?.models,
     staticModelValues,
     savedCustomModels,
     customProviderModels,
@@ -996,6 +1012,46 @@ function ModelSelect({
         <SelectContent>
           <SelectGroup>
             {models.map(m => (
+              <SelectItem key={m.name} value={m.name}>
+                {m.name}
+              </SelectItem>
+            ))}
+          </SelectGroup>
+        </SelectContent>
+      </Select>
+    )
+  }
+
+  if (provider === 'opencode-zen' || provider === 'opencode-go') {
+    const dynamicModels = opCodeModels?.models || []
+    if (dynamicModels.length === 0) {
+      // Fallback to the static list when the gateway /models fetch is unavailable
+      return (
+        <Select value={modelValue || undefined} onValueChange={setModel}>
+          <SelectTrigger className="h-7 w-full rounded-md border-transparent bg-bg-subtle px-2.5 text-xs font-medium hover:bg-hover focus:border-accent">
+            <SelectValue placeholder={t('integration.selectModel')} />
+          </SelectTrigger>
+          <SelectContent>
+            {getModelGroups(provider).map(group => (
+              <SelectGroup key={group.group}>
+                <SelectLabel>{group.group}</SelectLabel>
+                {group.models.map(m => (
+                  <SelectItem key={m.value} value={m.value}>{m.label} ({m.value})</SelectItem>
+                ))}
+              </SelectGroup>
+            ))}
+          </SelectContent>
+        </Select>
+      )
+    }
+    return (
+      <Select value={modelValue || undefined} onValueChange={setModel}>
+        <SelectTrigger className="h-7 w-full rounded-md border-transparent bg-bg-subtle px-2.5 text-xs font-medium hover:bg-hover focus:border-accent">
+          <SelectValue placeholder={t('integration.selectModel')} />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectGroup>
+            {dynamicModels.map(m => (
               <SelectItem key={m.name} value={m.name}>
                 {m.name}
               </SelectItem>

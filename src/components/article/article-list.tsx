@@ -230,7 +230,7 @@ export const ArticleList = forwardRef<ArticleListHandle, ArticleListProps>(funct
     )
     if (needsTranslation.length === 0) return
     const ids = needsTranslation.map(a => a.id)
-    apiPost('/api/articles/translate-titles', { ids })
+    apiPost('/api/articles/translate-titles', { ids, target_lang: locale })
       .then((res: unknown) => {
         const data = res as { results: { id: number; title_translated: string }[] }
         if (!data.results?.length) return

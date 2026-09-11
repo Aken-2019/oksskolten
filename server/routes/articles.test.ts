@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { setupTestDb } from '../__tests__/helpers/testDb.js'
 import { buildApp } from '../__tests__/helpers/buildApp.js'
-import { createFeed, createCategory, insertArticle, markArticleSeen } from '../db.js'
+import { createFeed, createCategory, insertArticle, markArticleSeen, getDb } from '../db.js'
 import type { FastifyInstance } from 'fastify'
 
 // ---------------------------------------------------------------------------
@@ -475,5 +475,70 @@ describe('GET /api/articles?unread=1 — total_all field', () => {
 
     const res = await app.inject({ method: 'GET', url: '/api/articles' })
     expect(res.json().total_all).toBeUndefined()
+  })
+})
+
+describe('translate target_lang param (client locale)', () => {
+  it('translates an English article to zh when target_lang=zh is passed', async () => {
+    const feed = seedFeed()
+    const artId = seedArticle(feed.id, { full_text: 'English article', lang: 'en' })
+
+    const res = await app.inject({
+      method: 'POST',
+      url: `/api/articles/${artId}/translate?target_lang=zh`,
+      headers: json,
+      payload: {},
+    })
+
+    expect(res.statusCode).toBe(200)
+    expect(res.json().text).toBe('翻訳テキスト')
+    const stored = getDb().prepare('SELECT full_text_translated, translated_lang FROM articles WHERE id = ?').get(artId) as { full_text_translated: string; translated_lang: string }
+    expect(stored.translated_lang).toBe('zh')
+    expect(stored.full_text_translated).toBe('翻訳テキスト')
+  })
+
+  it('returns cached zh translation when translated_lang matches target_lang=zh', async () => {
+    const feed = seedFeed()
+    const artId = seedArticle(feed.id, { full_text: 'English text', full_text_translated: '中文翻译', translated_lang: 'zh' })
+
+    const res = await app.inject({
+      method: 'POST',
+      url: `/api/articles/${artId}/translate?target_lang=zh`,
+      headers: json,
+      payload: {},
+    })
+
+    expect(res.statusCode).toBe(200)
+    expect(res.json().cached).toBe(true)
+    expect(res.json().text).toBe('中文翻译')
+  })
+
+  it('still 400s without target_lang for an en article (default fallback unchanged)', async () => {
+    const feed = seedFeed()
+    const artId = seedArticle(feed.id, { full_text: 'English article', lang: 'en' })
+
+    const res = await app.inject({
+      method: 'POST',
+      url: `/api/articles/${artId}/translate`,
+      headers: json,
+      payload: {},
+    })
+
+    expect(res.statusCode).toBe(400)
+    expect(res.json().error).toMatch(/already in en/)
+  })
+
+  it('rejects unsupported target_lang values', async () => {
+    const feed = seedFeed()
+    const artId = seedArticle(feed.id, { full_text: 'English article', lang: 'en' })
+
+    const res = await app.inject({
+      method: 'POST',
+      url: `/api/articles/${artId}/translate?target_lang=ko`,
+      headers: json,
+      payload: {},
+    })
+
+    expect(res.statusCode).toBe(400)
   })
 })
