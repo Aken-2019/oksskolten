@@ -30,7 +30,7 @@ import { ApiTokenSettings } from './api-token-settings'
 
 function renderComponent() {
   return render(
-    <LocaleContext.Provider value={{ locale: 'en', setLocale: () => {} }}>
+    <LocaleContext.Provider value={{ locale: 'en', setLocale: () => {}, t: (key) => key as string, tError: (m) => m, isKeyNotSetError: () => false }}>
       <TooltipProvider>
         <ApiTokenSettings />
       </TooltipProvider>

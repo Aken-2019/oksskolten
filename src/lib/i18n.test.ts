@@ -5,7 +5,7 @@ import { LocaleContext, useI18n } from './i18n'
 
 function makeWrapper(locale: 'ja' | 'en') {
   return ({ children }: { children: React.ReactNode }) =>
-    createElement(LocaleContext.Provider, { value: { locale, setLocale: () => {} } }, children)
+    createElement(LocaleContext.Provider, { value: { locale, setLocale: () => {}, t: (key: string) => key as string, tError: (m: string) => m, isKeyNotSetError: () => false } }, children)
 }
 
 describe('useI18n', () => {

@@ -84,6 +84,11 @@ vi.mock('swr', () => ({
 const mockApiPatch = vi.fn()
 const mockAuthHeaders = vi.fn(() => ({ Authorization: 'Bearer test-token' }))
 
+const { mockToastError } = vi.hoisted(() => ({ mockToastError: vi.fn() }))
+vi.mock('sonner', () => ({
+  toast: { error: (...args: unknown[]) => mockToastError(...args) },
+}))
+
 vi.mock('../lib/fetcher', () => ({
   fetcher: vi.fn(),
   apiPatch: (...args: unknown[]) => mockApiPatch(...args),
@@ -466,5 +471,17 @@ describe('useSettings', () => {
     renderHook(() => useSettings())
 
     expect(mockSetHighlightTheme).toHaveBeenCalledWith('monokai')
+  })
+
+  it('surfaces a toast when the debounced preferences PATCH fails', async () => {
+    mockApiPatch.mockRejectedValue(new Error('network down'))
+    const { result } = renderHook(() => useSettings())
+
+    act(() => { result.current.setChatProvider('opencode-go') })
+
+    // debounced save fires 500ms after the change
+    await act(async () => { vi.advanceTimersByTime(500) })
+
+    expect(mockToastError).toHaveBeenCalled()
   })
 })

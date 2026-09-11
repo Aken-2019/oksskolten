@@ -140,7 +140,7 @@ function renderFeedList(
 
   return render(
     <MemoryRouter initialEntries={[initialPath]}>
-      <LocaleContext.Provider value={{ locale: 'en', setLocale: vi.fn() }}>
+      <LocaleContext.Provider value={{ locale: 'en', setLocale: vi.fn(), t: (key: string) => key as string, tError: (m: string) => m, isKeyNotSetError: () => false }}>
         <TooltipProvider>
           <SWRConfig value={{ provider: () => new Map(), fallback: swrFallback }}>
             <Routes>

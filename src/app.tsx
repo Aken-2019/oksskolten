@@ -4,7 +4,7 @@ import { AnimatePresence, motion } from 'framer-motion'
 import useSWR, { SWRConfig } from 'swr'
 import { useSettings, type Settings } from './hooks/use-settings'
 import { fetcher } from './lib/fetcher'
-import { LocaleContext, APP_NAME, type Locale, useI18n } from './lib/i18n'
+import { LocaleContext, APP_NAME, type Locale, useI18n, dict, errorCodeMap, translate } from './lib/i18n'
 import { MD_BREAKPOINT } from './lib/breakpoints'
 import { useIsTouchDevice } from './hooks/use-is-touch-device'
 import { saveScrollPosition, restoreScrollPosition } from './hooks/use-scroll-restoration'
@@ -80,7 +80,22 @@ function AppLayout() {
     }
   }, [profile, setLocale, langFromUrl])
 
-  const localeCtx = useMemo(() => ({ locale, setLocale }), [locale, setLocale])
+  const t = useCallback((key: Parameters<typeof translate>[0], params?: Record<string, string>) => {
+    let text: string = dict[key][locale]
+    if (params) {
+      for (const [k, v] of Object.entries(params)) {
+        text = text.replaceAll(`\${${k}}`, v)
+      }
+    }
+    return text
+  }, [locale])
+  const tError = useCallback((message: string) => {
+    const i18nKey = errorCodeMap[message]
+    return i18nKey ? dict[i18nKey][locale] : message
+  }, [locale])
+  const isKeyNotSetError = useCallback((message: string) => message in errorCodeMap, [])
+
+  const localeCtx = useMemo(() => ({ locale, setLocale, t, tError, isKeyNotSetError }), [locale, setLocale, t, tError, isKeyNotSetError])
 
   useEffect(() => {
     document.title = APP_NAME

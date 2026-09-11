@@ -1,5 +1,7 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import useSWR from 'swr'
+import { toast } from 'sonner'
+import { useI18n } from '../lib/i18n'
 import { useDarkMode } from './use-dark-mode'
 import { useTheme } from './use-theme'
 import { useDateMode } from './use-date-mode'
@@ -59,6 +61,7 @@ interface Prefs {
 }
 
 export function useSettings() {
+  const { t } = useI18n()
   const { isDark, colorMode, setColorMode } = useDarkMode()
   const [customThemes, setCustomThemesState] = useState<Theme[]>(() => {
     try {
@@ -264,7 +267,13 @@ export function useSettings() {
           return next
         }, false)
       })
-      .catch(() => {})
+      .catch(() => {
+        // Saved preference silently failing used to leave the UI optimistic
+        // while the server kept its previous value (e.g. provider fell back
+        // to the default). Surface it and re-sync from the server state.
+        toast.error(t('settings.saveFailed'))
+        void mutatePrefs()
+      })
       .finally(() => {
         inFlightRef.current = null
         if (Object.keys(pendingRef.current).length > 0) {

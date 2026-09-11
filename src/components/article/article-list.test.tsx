@@ -174,7 +174,7 @@ function OutletWrapper() {
 function renderArticleList(initialPath = '/inbox') {
   return render(
     <MemoryRouter initialEntries={[initialPath]}>
-      <LocaleContext.Provider value={{ locale: 'en', setLocale: vi.fn() }}>
+      <LocaleContext.Provider value={{ locale: 'en', setLocale: vi.fn(), t: (key: string) => key as string, tError: (m: string) => m, isKeyNotSetError: () => false }}>
         <Routes>
           <Route element={<OutletWrapper />}>
             <Route path="feeds/:feedId" element={<ArticleList />} />

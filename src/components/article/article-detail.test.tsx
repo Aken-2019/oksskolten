@@ -176,7 +176,7 @@ describe('ArticleDetail bookmark', () => {
   it('updates the bookmark button immediately after click', async () => {
     render(
       <MemoryRouter>
-        <LocaleContext.Provider value={{ locale: 'ja', setLocale: vi.fn() }}>
+        <LocaleContext.Provider value={{ locale: 'ja', setLocale: vi.fn(), t: (key: string) => key as string, tError: (m: string) => m, isKeyNotSetError: () => false }}>
           <TooltipProvider>
             <SWRConfig value={{ provider: () => new Map(), fallback: { [articleKey]: article } }}>
               <Routes>
@@ -243,7 +243,7 @@ describe('ArticleDetail like', () => {
   it('updates the like button immediately after click', async () => {
     render(
       <MemoryRouter>
-        <LocaleContext.Provider value={{ locale: 'ja', setLocale: vi.fn() }}>
+        <LocaleContext.Provider value={{ locale: 'ja', setLocale: vi.fn(), t: (key: string) => key as string, tError: (m: string) => m, isKeyNotSetError: () => false }}>
           <TooltipProvider>
             <SWRConfig value={{ provider: () => new Map(), fallback: { [articleKey]: article } }}>
               <Routes>
@@ -309,7 +309,7 @@ describe('ArticleDetail summary', () => {
   it('calls summarize without force when no existing summary', async () => {
     render(
       <MemoryRouter>
-        <LocaleContext.Provider value={{ locale: 'en', setLocale: vi.fn() }}>
+        <LocaleContext.Provider value={{ locale: 'en', setLocale: vi.fn(), t: (key: string) => key as string, tError: (m: string) => m, isKeyNotSetError: () => false }}>
           <TooltipProvider>
             <SWRConfig value={{ provider: () => new Map(), fallback: { [articleKey]: article } }}>
               <Routes>
@@ -365,7 +365,7 @@ describe('ArticleDetail stale translation filtering', () => {
 
     render(
       <MemoryRouter>
-        <LocaleContext.Provider value={{ locale: 'en', setLocale: vi.fn() }}>
+        <LocaleContext.Provider value={{ locale: 'en', setLocale: vi.fn(), t: (key: string) => key as string, tError: (m: string) => m, isKeyNotSetError: () => false }}>
           <TooltipProvider>
             <SWRConfig value={{ provider: () => new Map(), fallback: { [articleKey]: article } }}>
               <Routes>
@@ -406,7 +406,7 @@ describe('ArticleDetail stale translation filtering', () => {
 
     render(
       <MemoryRouter>
-        <LocaleContext.Provider value={{ locale: 'ja', setLocale: vi.fn() }}>
+        <LocaleContext.Provider value={{ locale: 'ja', setLocale: vi.fn(), t: (key: string) => key as string, tError: (m: string) => m, isKeyNotSetError: () => false }}>
           <TooltipProvider>
             <SWRConfig value={{ provider: () => new Map(), fallback: { [articleKey]: article } }}>
               <Routes>
@@ -447,7 +447,7 @@ describe('ArticleDetail stale translation filtering', () => {
 
     render(
       <MemoryRouter>
-        <LocaleContext.Provider value={{ locale: 'ja', setLocale: vi.fn() }}>
+        <LocaleContext.Provider value={{ locale: 'ja', setLocale: vi.fn(), t: (key: string) => key as string, tError: (m: string) => m, isKeyNotSetError: () => false }}>
           <TooltipProvider>
             <SWRConfig value={{ provider: () => new Map(), fallback: { [articleKey]: article } }}>
               <Routes>
@@ -515,7 +515,7 @@ describe('ArticleDetail immersive translation', () => {
     mockSettings.summaryAuto = 'on'
     mockSettings.translateAuto = 'off'
     render(<MemoryRouter>
-      <LocaleContext.Provider value={{ locale: 'en', setLocale: vi.fn() }}>
+      <LocaleContext.Provider value={{ locale: 'en', setLocale: vi.fn(), t: (key: string) => key as string, tError: (m: string) => m, isKeyNotSetError: () => false }}>
         <TooltipProvider>
           <SWRConfig value={{ provider: () => new Map(), fallback: { [articleKey]: article } }}>
             <Routes>
@@ -540,7 +540,7 @@ describe('ArticleDetail immersive translation', () => {
     mockSettings.translateProvider = 'anthropic'
 
     render(<MemoryRouter>
-      <LocaleContext.Provider value={{ locale: 'en', setLocale: vi.fn() }}>
+      <LocaleContext.Provider value={{ locale: 'en', setLocale: vi.fn(), t: (key: string) => key as string, tError: (m: string) => m, isKeyNotSetError: () => false }}>
         <TooltipProvider>
           <SWRConfig value={{ provider: () => new Map(), fallback: { [articleKey]: article } }}>
             <Routes>
@@ -564,7 +564,7 @@ describe('ArticleDetail immersive translation', () => {
     mockSettings.translateAuto = 'off'
 
     render(<MemoryRouter>
-      <LocaleContext.Provider value={{ locale: 'en', setLocale: vi.fn() }}>
+      <LocaleContext.Provider value={{ locale: 'en', setLocale: vi.fn(), t: (key: string) => key as string, tError: (m: string) => m, isKeyNotSetError: () => false }}>
         <TooltipProvider>
           <SWRConfig value={{ provider: () => new Map(), fallback: { [articleKey]: article } }}>
             <Routes>
@@ -586,7 +586,7 @@ describe('ArticleDetail immersive translation', () => {
     mockSettings.translateAuto = 'on'
 
     render(<MemoryRouter>
-      <LocaleContext.Provider value={{ locale: 'en', setLocale: vi.fn() }}>
+      <LocaleContext.Provider value={{ locale: 'en', setLocale: vi.fn(), t: (key: string) => key as string, tError: (m: string) => m, isKeyNotSetError: () => false }}>
         <TooltipProvider>
           <SWRConfig value={{ provider: () => new Map(), fallback: { [articleKey]: article } }}>
             <Routes>
@@ -624,7 +624,7 @@ describe('ArticleDetail immersive translation', () => {
 
       const { unmount } = render(
         <MemoryRouter>
-          <LocaleContext.Provider value={{ locale, setLocale: vi.fn() }}>
+          <LocaleContext.Provider value={{ locale, setLocale: vi.fn(), t: (key: string) => key as string, tError: (m: string) => m, isKeyNotSetError: () => false }}>
             <TooltipProvider>
               <SWRConfig value={{ provider: () => new Map(), fallback: { [articleKey]: article } }}>
                 <Routes>
@@ -658,7 +658,7 @@ describe('ArticleDetail immersive translation', () => {
 
     render(
       <MemoryRouter>
-        <LocaleContext.Provider value={{ locale: 'en', setLocale: vi.fn() }}>
+        <LocaleContext.Provider value={{ locale: 'en', setLocale: vi.fn(), t: (key: string) => key as string, tError: (m: string) => m, isKeyNotSetError: () => false }}>
           <TooltipProvider>
             <SWRConfig value={{ provider: () => new Map(), fallback: { [articleKey]: article } }}>
               <Routes>
@@ -682,7 +682,7 @@ describe('ArticleDetail immersive translation', () => {
 
     render(
       <MemoryRouter>
-        <LocaleContext.Provider value={{ locale: 'en', setLocale: vi.fn() }}>
+        <LocaleContext.Provider value={{ locale: 'en', setLocale: vi.fn(), t: (key: string) => key as string, tError: (m: string) => m, isKeyNotSetError: () => false }}>
           <TooltipProvider>
             <SWRConfig value={{ provider: () => new Map(), fallback: { [articleKey]: article } }}>
               <Routes>
@@ -706,7 +706,7 @@ describe('ArticleDetail immersive translation', () => {
 
     render(
       <MemoryRouter>
-        <LocaleContext.Provider value={{ locale: 'zh', setLocale: vi.fn() }}>
+        <LocaleContext.Provider value={{ locale: 'zh', setLocale: vi.fn(), t: (key: string) => key as string, tError: (m: string) => m, isKeyNotSetError: () => false }}>
           <TooltipProvider>
             <SWRConfig value={{ provider: () => new Map(), fallback: { [articleKey]: article } }}>
               <Routes>

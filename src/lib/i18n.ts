@@ -4,7 +4,7 @@ export type Locale = 'ja' | 'en' | 'zh'
 
 export const APP_NAME = 'Oksskolten'
 
-const dict = {
+export const dict = {
   // Header
   'header.menu': { ja: 'メニュー', en: 'Menu', zh: '菜单'},
   'header.back': { ja: '戻る', en: 'Back', zh: '返回'},
@@ -386,6 +386,7 @@ const dict = {
   'settings.languageJa': { ja: '日本語', en: 'Japanese', zh: '日语' },
   'settings.languageEn': { ja: '英語', en: 'English', zh: '英语' },
   'settings.languageZh': { ja: '中国語', en: 'Chinese', zh: '简体中文' },
+  'settings.saveFailed': { ja: '設定の保存に失敗しました。もう一度お試しください', en: 'Failed to save settings. Please try again', zh: '设置保存失败，请重试'},
 
   // Summary target language
   'settings.summaryTargetLang': { ja: '要約言語', en: 'Summary language', zh: '摘要语言'},
@@ -789,6 +790,16 @@ const dict = {
   'provider.deepseek': { ja: 'DeepSeek', en: 'DeepSeek', zh: 'DeepSeek'},
   'provider.mimo': { ja: 'Mimo', en: 'Mimo', zh: 'Mimo'},
   'provider.opencodeZen': { ja: 'OpenCode Zen', en: 'OpenCode Zen', zh: 'OpenCode Zen'},
+  'error.opencodeZenKeyNotSet': {
+    ja: 'OpenCode Zen の API キーが設定されていません。',
+    en: 'OpenCode Zen API key is not configured.',
+    zh: 'OpenCode Zen API 密钥未配置。'
+  },
+  'error.opencodeGoKeyNotSet': {
+    ja: 'OpenCode Go の API キーが設定されていません。',
+    en: 'OpenCode Go API key is not configured.',
+    zh: 'OpenCode Go API 密钥未配置。'
+  },
   'provider.opencodeGo': { ja: 'OpenCode Go', en: 'OpenCode Go', zh: 'OpenCode Go'},
   'provider.custom': { ja: 'カスタムプロバイダー', en: 'Custom Provider', zh: '自定义提供商'},
 
@@ -1005,12 +1016,14 @@ const dict = {
 
 type MessageKey = keyof typeof dict
 
-const errorCodeMap: Record<string, MessageKey> = {
+export const errorCodeMap: Record<string, MessageKey> = {
   ANTHROPIC_KEY_NOT_SET: 'error.anthropicKeyNotSet',
   GEMINI_KEY_NOT_SET: 'error.geminiKeyNotSet',
   OPENAI_KEY_NOT_SET: 'error.openaiKeyNotSet',
   GOOGLE_TRANSLATE_KEY_NOT_SET: 'error.googleTranslateKeyNotSet',
   DEEPL_KEY_NOT_SET: 'error.deeplKeyNotSet',
+  'OPENCODE-ZEN_KEY_NOT_SET': 'error.opencodeZenKeyNotSet',
+  'OPENCODE-GO_KEY_NOT_SET': 'error.opencodeGoKeyNotSet',
   SUMMARIZATION_FAILED: 'error.summarizationFailed',
   TRANSLATION_FAILED: 'error.translationFailed',
 }
@@ -1018,6 +1031,9 @@ const errorCodeMap: Record<string, MessageKey> = {
 interface LocaleContextValue {
   locale: Locale
   setLocale: (locale: Locale) => void
+  t: TranslateFn
+  tError: (message: string) => string
+  isKeyNotSetError: (message: string) => boolean
 }
 
 const defaultLocale: Locale = navigator.language.startsWith('ja') ? 'ja' : navigator.language.startsWith('zh') ? 'zh' : 'en'
@@ -1033,9 +1049,28 @@ export function translate(key: MessageKey): string {
   return dict[key][resolveLocale()]
 }
 
+/** Check whether an error string maps to a known i18n message. */
+export function isKnownErrorCode(code: string): boolean {
+  return code in errorCodeMap
+}
+
 export const LocaleContext = createContext<LocaleContextValue>({
   locale: defaultLocale,
   setLocale: () => {},
+  t: (key, params) => {
+    let text: string = dict[key][resolveLocale()]
+    if (params) {
+      for (const [k, v] of Object.entries(params)) {
+        text = text.replaceAll(`\${${k}}`, v)
+      }
+    }
+    return text
+  },
+  tError: (message) => {
+    const i18nKey = errorCodeMap[message]
+    return i18nKey ? translate(i18nKey) : message
+  },
+  isKeyNotSetError: (message) => message in errorCodeMap,
 })
 
 export type TranslateFn = (key: MessageKey, params?: Record<string, string>) => string
