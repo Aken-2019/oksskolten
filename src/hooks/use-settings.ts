@@ -46,10 +46,15 @@ interface Prefs {
   'summary.provider': string | null
   'summary.model': string | null
   'summary.max_tokens': string | null
+  'summary.auto': string | null
+  'summary.target_lang': string | null
+  'translate.auto': string | null
+  'translate.title_auto': string | null
   'translate.provider': string | null
   'translate.model': string | null
   'translate.max_tokens': string | null
   'translate.target_lang': string | null
+  'translate.source_lang': string | null
   'custom_themes': string | null
 }
 
@@ -83,11 +88,16 @@ export function useSettings() {
   const [chatModel, setChatModelState] = useState<string | null>(null)
   const [summaryProvider, setSummaryProviderState] = useState<string | null>(null)
   const [summaryModel, setSummaryModelState] = useState<string | null>(null)
+  const [summaryAuto, setSummaryAutoState] = useState<'on' | 'off' | null>(null)
+  const [summaryTargetLang, setSummaryTargetLangState] = useState<string | null>(null)
+  const [translateAuto, setTranslateAutoState] = useState<'on' | 'off' | null>(null)
+  const [translateTitleAuto, setTranslateTitleAutoState] = useState<'on' | 'off' | null>(null)
   const [translateProvider, setTranslateProviderState] = useState<string | null>(null)
   const [translateModel, setTranslateModelState] = useState<string | null>(null)
   const [translateTargetLang, setTranslateTargetLangState] = useState<string | null>(null)
   const [summaryMaxTokens, setSummaryMaxTokensState] = useState<string | null>(null)
   const [translateMaxTokens, setTranslateMaxTokensState] = useState<string | null>(null)
+  const [translateSourceLang, setTranslateSourceLangState] = useState<string | null>(null)
 
   // --- DB sync ---
   const { data: prefs, mutate: mutatePrefs } = useSWR<Prefs>(
@@ -117,6 +127,12 @@ export function useSettings() {
   showThumbnailsRef.current = showThumbnails
   const showFeedActivityRef = useRef(showFeedActivity)
   showFeedActivityRef.current = showFeedActivity
+  const summaryAutoRef = useRef('off')
+  summaryAutoRef.current = summaryAuto || 'off'
+  const translateAutoRef = useRef('off')
+  translateAutoRef.current = translateAuto || 'off'
+  const translateTitleAutoRef = useRef('off')
+  translateTitleAutoRef.current = translateTitleAuto || 'off'
   const chatPositionRef = useRef(chatPosition)
   chatPositionRef.current = chatPosition
   const articleOpenModeRef = useRef(articleOpenMode)
@@ -158,7 +174,7 @@ export function useSettings() {
       { key: 'reading.chat_position', setter: setChatPosition, backfillRef: chatPositionRef,
         validate: v => v === 'fab' || v === 'inline' },
       { key: 'reading.article_open_mode', setter: setArticleOpenMode, backfillRef: articleOpenModeRef,
-        validate: v => v === 'page' || v === 'overlay' },
+        validate: v => v === 'page' || v === 'overlay' || v === 'split' },
       { key: 'reading.category_unread_only', setter: setCategoryUnreadOnly, backfillRef: categoryUnreadOnlyRef,
         validate: v => v === 'on' || v === 'off' },
       { key: 'appearance.list_layout', setter: setLayout, backfillRef: layoutRef,
@@ -176,11 +192,16 @@ export function useSettings() {
       { key: 'chat.model', setter: setChatModelState },
       { key: 'summary.provider', setter: setSummaryProviderState },
       { key: 'summary.model', setter: setSummaryModelState },
+      { key: 'summary.auto', setter: setSummaryAutoState, backfillRef: summaryAutoRef, validate: v => v === 'on' || v === 'off' },
+      { key: 'summary.target_lang', setter: setSummaryTargetLangState },
+      { key: 'translate.auto', setter: setTranslateAutoState, backfillRef: translateAutoRef, validate: v => v === 'on' || v === 'off' },
+      { key: 'translate.title_auto', setter: setTranslateTitleAutoState, backfillRef: translateTitleAutoRef, validate: v => v === 'on' || v === 'off' },
       { key: 'translate.provider', setter: setTranslateProviderState },
       { key: 'translate.model', setter: setTranslateModelState },
       { key: 'translate.target_lang', setter: setTranslateTargetLangState },
       { key: 'summary.max_tokens', setter: setSummaryMaxTokensState },
       { key: 'translate.max_tokens', setter: setTranslateMaxTokensState },
+      { key: 'translate.source_lang', setter: setTranslateSourceLangState },
     ]
 
     for (const { key, setter, backfillRef, validate } of hydrationMap) {
@@ -319,9 +340,14 @@ export function useSettings() {
     syncedSetChatModel,
     syncedSetSummaryProvider,
     syncedSetSummaryModel,
+    syncedSetSummaryAuto,
+    syncedSetSummaryTargetLang,
+    syncedSetTranslateAuto,
+    syncedSetTranslateTitleAuto,
     syncedSetTranslateProvider,
     syncedSetTranslateModel,
     syncedSetTranslateTargetLang,
+    syncedSetTranslateSourceLang,
     syncedSetSummaryMaxTokens,
     syncedSetTranslateMaxTokens,
   } = useMemo(() => {
@@ -356,11 +382,16 @@ export function useSettings() {
       syncedSetChatModel: make<string>('chat.model', setChatModelState),
       syncedSetSummaryProvider: make<string>('summary.provider', setSummaryProviderState),
       syncedSetSummaryModel: make<string>('summary.model', setSummaryModelState),
+      syncedSetSummaryAuto: make<'on' | 'off'>('summary.auto', setSummaryAutoState),
+      syncedSetSummaryTargetLang: make<string>('summary.target_lang', setSummaryTargetLangState),
+      syncedSetTranslateAuto: make<'on' | 'off'>('translate.auto', setTranslateAutoState),
+      syncedSetTranslateTitleAuto: make<'on' | 'off'>('translate.title_auto', setTranslateTitleAutoState),
       syncedSetTranslateProvider: make<string>('translate.provider', setTranslateProviderState),
       syncedSetTranslateModel: make<string>('translate.model', setTranslateModelState),
       syncedSetTranslateTargetLang: make<string>('translate.target_lang', setTranslateTargetLangState),
       syncedSetSummaryMaxTokens: make<string>('summary.max_tokens', setSummaryMaxTokensState),
       syncedSetTranslateMaxTokens: make<string>('translate.max_tokens', setTranslateMaxTokensState),
+      syncedSetTranslateSourceLang: make<string>('translate.source_lang', setTranslateSourceLangState),
     }
     // scheduleSave and dirtyKeysRef are stable refs; remaining setters are useState/useCallback-stable
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -443,6 +474,14 @@ export function useSettings() {
     setSummaryProvider: syncedSetSummaryProvider,
     summaryModel,
     setSummaryModel: syncedSetSummaryModel,
+    summaryAuto,
+    setSummaryAuto: syncedSetSummaryAuto,
+    summaryTargetLang,
+    setSummaryTargetLang: syncedSetSummaryTargetLang,
+    translateAuto,
+    setTranslateAuto: syncedSetTranslateAuto,
+    translateTitleAuto,
+    setTranslateTitleAuto: syncedSetTranslateTitleAuto,
     translateProvider,
     setTranslateProvider: syncedSetTranslateProvider,
     translateModel,
@@ -453,6 +492,8 @@ export function useSettings() {
     setSummaryMaxTokens: syncedSetSummaryMaxTokens,
     translateMaxTokens,
     setTranslateMaxTokens: syncedSetTranslateMaxTokens,
+    translateSourceLang,
+    setTranslateSourceLang: syncedSetTranslateSourceLang,
     keyboardNavigation,
     setKeyboardNavigation: syncedSetKeyboardNavigation,
     keybindings,

@@ -5,6 +5,7 @@ import Database from 'libsql'
 import { logger } from '../logger.js'
 import { dataPath } from '../paths.js'
 import { findProjectRoot } from '../paths.js'
+import { normalizeUrl } from '../../shared/url.js'
 
 const log = logger.child('db')
 
@@ -31,6 +32,7 @@ function openDb(dbUrl: string) {
     : new Database(dbUrl)
   if (!remote) {
     instance.pragma('journal_mode = WAL')
+    instance.pragma('busy_timeout = 5000')
   }
   instance.pragma('foreign_keys = ON')
   // Limit SQLite internal heap growth to prevent native memory accumulation.
@@ -111,6 +113,8 @@ function isIdempotentError(err: unknown): boolean {
 /**
  * Run SQL statements one-by-one, skipping ones that fail due to
  * already-applied schema changes (duplicate column, missing column, etc.).
+ * Runs within the caller's transaction so a failure rolls back all
+ * statements in the migration.
  */
 function execSafe(sql: string, file: string) {
   const statements = sql
@@ -154,21 +158,74 @@ export function runMigrations() {
   for (const file of files) {
     if (applied.has(file)) continue
     const sql = fs.readFileSync(path.join(migrationsDir, file), 'utf-8')
+    // foreign_keys pragma must be toggled outside a transaction (it is a
+    // no-op to change mid-transaction). Disable before, re-enable after.
     if (!remote) db.pragma('foreign_keys = OFF')
     try {
-      db.exec(sql)
-    } catch (err: unknown) {
-      if (isIdempotentError(err)) {
-        // Partially-applied migration — run each statement individually,
-        // skipping ones that conflict with existing schema.
-        log.warn(`Migration ${file}: partial conflict (${(err as Error).message}), applying statement-by-statement`)
-        execSafe(sql, file)
+      // Run the schema change(s) and record the migration in one
+      // transaction so a failure rolls the whole migration back — the
+      // _migrations row is only committed when the SQL fully succeeds,
+      // and a partial apply never leaves half-applied schema behind.
+      db.transaction(() => {
+        try {
+          db.exec(sql)
+        } catch (err: unknown) {
+          if (isIdempotentError(err)) {
+            // Partially-applied migration — run each statement
+            // individually, skipping ones that conflict with existing
+            // schema.
+            log.warn(`Migration ${file}: partial conflict (${(err as Error).message}), applying statement-by-statement`)
+            execSafe(sql, file)
+          } else {
+            throw err
+          }
+        }
+        db.prepare('INSERT INTO _migrations (name) VALUES (?)').run(file)
+      })()
+    } finally {
+      if (!remote) db.pragma('foreign_keys = ON')
+    }
+    log.info(`Migration applied: ${file}`)
+  }
+
+  // TS data migration: canonicalize legacy article URLs (#102 consecutive slashes, #116 percent-hex case).
+  // Runs once, tracked in _migrations for idempotency like the .sql migrations, but uses the shared
+  // normalizeUrl() so the SQL layer and the app's canonical form never drift.
+  //
+  // Legacy data can hold the *same article* under two URL spellings (e.g. `//kiji/a` and `/kiji/a`
+  // fetched at different times), and articles.url is UNIQUE. Normalizing such a collision violates the
+  // constraint, so we first dedupe: for each URL that collapses onto the same canonical form, keep the
+  // row with the smallest id and delete the others, then rewrite the surviving URL to the canonical form.
+  const URL_NORM = 'url_normalize_v1'
+  if (!applied.has(URL_NORM) && !remote) {
+    const rows = db.prepare('SELECT id, url FROM articles').all() as { id: number; url: string }[]
+    // Group by canonical url -> keep smallest id, drop the rest.
+    const keep = new Map<string, number>() // canonical -> id to keep
+    const drop: number[] = []
+    for (const row of rows) {
+      const canonical = normalizeUrl(row.url)
+      const existing = keep.get(canonical)
+      if (existing === undefined) {
+        keep.set(canonical, row.id)
+      } else if (row.id < existing) {
+        // A smaller id arrived for this canonical; keep it instead
+        drop.push(existing)
+        keep.set(canonical, row.id)
       } else {
-        throw err
+        drop.push(row.id)
       }
     }
-    if (!remote) db.pragma('foreign_keys = ON')
-    db.prepare('INSERT INTO _migrations (name) VALUES (?)').run(file)
-    log.info(`Migration applied: ${file}`)
+    const del = db.prepare('DELETE FROM articles WHERE id = ?')
+    const update = db.prepare('UPDATE articles SET url = ? WHERE id = ?')
+    const tx = db.transaction(() => {
+      for (const id of drop) del.run(id)
+      for (const [canonical, id] of keep) {
+        const raw = rows.find(r => r.id === id)?.url
+        if (raw !== undefined && raw !== canonical) update.run(canonical, id)
+      }
+    })
+    tx()
+    db.prepare('INSERT INTO _migrations (name) VALUES (?)').run(URL_NORM)
+    log.info(`Migration ${URL_NORM}: deduped ${drop.length} row(s), kept ${keep.size} canonical URL(s)`)
   }
 }

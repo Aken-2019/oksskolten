@@ -1,9 +1,13 @@
 import type { LLMProvider } from './provider.js'
 import { anthropicProvider } from './anthropic.js'
-import { geminiProvider } from './gemini.js'
-import { openaiProvider } from './openai.js'
 import { claudeCodeProvider } from './claude-code.js'
+import { customProvider, getCustomProviderById, isCustomProviderId } from './custom.js'
+import { deepseekProvider } from './deepseek.js'
+import { geminiProvider } from './gemini.js'
+import { mimoProvider } from './mimo.js'
+import { makeOpCodeProvider } from './opencode-gateway.js'
 import { ollamaProvider } from './ollama.js'
+import { openaiProvider } from './openai.js'
 import { vllmProvider } from './vllm.js'
 
 const providers = new Map<string, LLMProvider>()
@@ -14,9 +18,18 @@ providers.set('openai', openaiProvider)
 providers.set('claude-code', claudeCodeProvider)
 providers.set('ollama', ollamaProvider)
 providers.set('vllm', vllmProvider)
+providers.set('deepseek', deepseekProvider)
+providers.set('mimo', mimoProvider)
+providers.set('custom', customProvider)
+providers.set('opencode-zen', makeOpCodeProvider('opencode-zen'))
+providers.set('opencode-go', makeOpCodeProvider('opencode-go'))
 
 export function getProvider(name: string): LLMProvider {
+  if (isCustomProviderId(name)) {
+    return getCustomProviderById(name)
+  }
+
   const provider = providers.get(name)
-  if (!provider) throw new Error(`Unknown LLM provider: ${name}`)
-  return provider
+  if (provider) return provider
+  throw new Error(`Unknown LLM provider: ${name}`)
 }

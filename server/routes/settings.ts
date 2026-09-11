@@ -9,7 +9,18 @@ import {
   getDb,
 } from '../db.js'
 import { requireJson, getAuthUser } from '../auth.js'
-import { getAllModelValues, getModelValues } from '../../shared/models.js'
+import { getModelValues } from '../../shared/models.js'
+import {
+  getStoredCustomProviders,
+  getCustomProviderModels,
+  getCustomProviderConfig,
+  CustomApiFormat,
+  CUSTOM_PROVIDER_ID_RE,
+  PROVIDER_LIST_KEY,
+  generateCustomProviderId,
+  API_KEY_PREFIX,
+  isCustomProviderId,
+} from '../providers/llm/custom.js'
 import { assertSafeUrl } from '../fetcher/ssrf.js'
 import { extractByDotPath } from '../fetcher/article-images.js'
 import { getMonthlyUsage } from '../providers/translate/google-translate.js'
@@ -47,10 +58,15 @@ const PREF_KEYS = [
   'summary.provider',
   'summary.model',
   'summary.max_tokens',
+  'summary.auto',
+  'summary.target_lang',
+  'translate.auto',
+  'translate.title_auto',
   'translate.provider',
   'translate.model',
   'translate.max_tokens',
   'translate.target_lang',
+  'translate.source_lang',
   'ollama.base_url',
   'ollama.custom_headers',
   'vllm.base_url',
@@ -58,6 +74,16 @@ const PREF_KEYS = [
   'retention.enabled',
   'retention.read_days',
   'retention.unread_days',
+  'custom.base_url',
+  'custom.name',
+  'custom.models',
+  'anthropic.base_url',
+  'deepseek.base_url',
+  'mimo.base_url',
+  'opencode_zen.base_url',
+  'opencode_go.base_url',
+  'openai.base_url',
+  'gemini.base_url',
 ] as const
 type PrefKey = typeof PREF_KEYS[number]
 
@@ -70,7 +96,7 @@ const PREF_ALLOWED: Record<PrefKey, string[] | null> = {
   'reading.show_thumbnails': ['on', 'off'],
   'reading.show_feed_activity': ['on', 'off'],
   'reading.chat_position': ['fab', 'inline'],
-  'reading.article_open_mode': ['page', 'overlay'],
+  'reading.article_open_mode': ['page', 'overlay', 'split'],
   'reading.category_unread_only': ['on', 'off'],
   'reading.keyboard_navigation': ['on', 'off'],
   'reading.keybindings': null,
@@ -78,15 +104,20 @@ const PREF_ALLOWED: Record<PrefKey, string[] | null> = {
   'appearance.highlight_theme': null,
   'appearance.font_family': null,
   'appearance.list_layout': ['list', 'card', 'magazine', 'compact'],
-  'chat.provider': ['anthropic', 'gemini', 'openai', 'claude-code', 'ollama', 'vllm'],
-  'chat.model': getAllModelValues(),
-  'summary.provider': ['anthropic', 'gemini', 'openai', 'claude-code', 'ollama', 'vllm'],
-  'summary.model': getAllModelValues(),
+  'chat.provider': ['anthropic', 'gemini', 'openai', 'claude-code', 'ollama', 'vllm', 'deepseek', 'mimo', 'opencode-zen', 'opencode-go', 'custom'],
+  'chat.model': null,
+  'summary.provider': ['anthropic', 'gemini', 'openai', 'claude-code', 'ollama', 'vllm', 'deepseek', 'mimo', 'opencode-zen', 'opencode-go', 'custom'],
+  'summary.model': null,
   'summary.max_tokens': null,
-  'translate.provider': ['anthropic', 'gemini', 'openai', 'claude-code', 'ollama', 'vllm', 'google-translate', 'deepl'],
-  'translate.model': getAllModelValues(),
+  'summary.auto': ['on', 'off'],
+  'summary.target_lang': ['ja', 'en', 'zh'],
+  'translate.auto': ['on', 'off'],
+  'translate.title_auto': ['on', 'off'],
+  'translate.provider': ['anthropic', 'gemini', 'openai', 'claude-code', 'ollama', 'vllm', 'google-translate', 'deepl', 'deepseek', 'mimo', 'opencode-zen', 'opencode-go', 'custom'],
+  'translate.model': null,
   'translate.max_tokens': null,
   'translate.target_lang': ['ja', 'en', 'zh'],
+  'translate.source_lang': ['ja', 'en', 'zh'],
   'ollama.base_url': null,
   'ollama.custom_headers': null,
   'vllm.base_url': null,
@@ -94,6 +125,82 @@ const PREF_ALLOWED: Record<PrefKey, string[] | null> = {
   'retention.enabled': ['on', 'off'],
   'retention.read_days': null,
   'retention.unread_days': null,
+  'custom.base_url': null,
+  'custom.name': null,
+  'custom.models': null,
+  'anthropic.base_url': null,
+  'deepseek.base_url': null,
+  'mimo.base_url': null,
+  'opencode_zen.base_url': null,
+  'opencode_go.base_url': null,
+  'openai.base_url': null,
+  'gemini.base_url': null,
+}
+
+const isCustomProviderIdValue = isCustomProviderId
+
+function getCustomProviderApiKeySettingKey(providerId: string): string | null {
+  if (providerId === 'custom') return 'api_key.custom'
+  if (!CUSTOM_PROVIDER_ID_RE.test(providerId)) return null
+  return `${API_KEY_PREFIX}${providerId}`
+}
+
+function getAllCustomProvidersForSettings(): Array<{ id: string; name: string; baseUrl: string; models: string[]; apiFormat: CustomApiFormat; configured: boolean }> {
+  const providers = getStoredCustomProviders()
+  const providerValues = providers.map(provider => ({
+    ...provider,
+    configured: !!getSetting(getCustomProviderApiKeySettingKey(provider.id) || ''),
+  }))
+  return providerValues
+}
+
+function readStoredCustomProviders(): ReturnType<typeof getStoredCustomProviders> {
+  const raw = getSetting(PROVIDER_LIST_KEY)
+  if (!raw) return []
+  try {
+    const parsed = JSON.parse(raw)
+    if (!Array.isArray(parsed)) return []
+    return parsed
+      .map(item => {
+        if (!item || typeof item !== 'object') return null
+        const candidate = item as { id?: unknown; name?: unknown; baseUrl?: unknown; models?: unknown; apiFormat?: unknown }
+        const id = String(candidate.id || '').trim()
+        const name = String(candidate.name || '').trim()
+        const baseUrl = String(candidate.baseUrl || '').trim()
+        const apiFormat = String(candidate.apiFormat || '').trim().toLowerCase()
+        if (!id || !name || !baseUrl) return null
+        if (id === 'custom' || !CUSTOM_PROVIDER_ID_RE.test(id)) return null
+        const models = Array.isArray(candidate.models)
+          ? candidate.models
+              .map(value => (typeof value === 'string' ? value.trim() : ''))
+              .filter((value): value is string => value.length > 0)
+          : []
+        return { id, name, baseUrl, models, apiFormat: apiFormat === 'anthropic' ? 'anthropic' : 'openai' }
+      })
+      .filter((item): item is ReturnType<typeof getStoredCustomProviders>[number] => item !== null)
+  } catch {
+    return []
+  }
+}
+
+function normalizeCustomModels(models: string[]): string[] {
+  const unique = new Set<string>()
+  const result: string[] = []
+  for (const model of models) {
+    const value = String(model || '').trim()
+    if (!value || unique.has(value)) continue
+    unique.add(value)
+    result.push(value)
+  }
+  return result
+}
+
+function persistCustomProviders(providers: ReturnType<typeof readStoredCustomProviders>): void {
+  if (providers.length === 0) {
+    deleteSetting(PROVIDER_LIST_KEY)
+    return
+  }
+  upsertSetting(PROVIDER_LIST_KEY, JSON.stringify(providers))
 }
 
 const PROVIDER_MODEL_PAIRS: Array<{ providerKey: PrefKey; modelKey: PrefKey }> = [
@@ -107,8 +214,28 @@ function validateProviderModel(body: Record<string, unknown>): string | null {
     const model = body[modelKey] !== undefined ? String(body[modelKey]) : getSetting(modelKey)
     const provider = body[providerKey] !== undefined ? String(body[providerKey]) : getSetting(providerKey)
     if (!model || !provider) continue
-    // google-translate, deepl, ollama, and vllm have no static model list
-    if (provider === 'google-translate' || provider === 'deepl' || provider === 'ollama' || provider === 'vllm') continue
+    if (isCustomProviderIdValue(provider)) {
+      const customModels = getCustomProviderModels(provider)
+      if (!customModels.length) {
+        return `Custom provider ${provider} has no configured models`
+      }
+      if (customModels.length > 0 && !customModels.includes(model)) {
+        return `Model ${model} is not enabled for provider ${provider}`
+      }
+      continue
+    }
+    if (provider === 'custom') {
+      const customModels = getCustomProviderModels('custom')
+      if (!customModels.length) {
+        return 'Custom provider has no configured models'
+      }
+      if (!customModels.includes(model)) {
+        return `Model ${model} is not enabled for provider ${provider}`
+      }
+      continue
+    }
+    // google-translate, deepl, ollama, deepseek, opencode gateways, and vllm have no static model list
+    if (provider === 'google-translate' || provider === 'deepl' || provider === 'ollama' || provider === 'deepseek' || provider === 'opencode-zen' || provider === 'opencode-go' || provider === 'vllm') continue
     // claude-code uses anthropic model IDs
     const effectiveProvider = provider === 'claude-code' ? 'anthropic' : provider
     const allowedModels = getModelValues(effectiveProvider)
@@ -221,14 +348,38 @@ export async function settingsRoutes(api: FastifyInstance): Promise<void> {
         continue
       }
       const allowed = PREF_ALLOWED[key]
+      if (key.endsWith('.provider') && allowed) {
+        if (!allowed.includes(value) && isCustomProviderIdValue(value)) {
+          if (!getCustomProviderConfig(value)) {
+            reply.status(400).send({ error: `Invalid value for ${key}` })
+            return
+          }
+        } else if (!allowed.includes(value) && key === 'translate.provider' && !value.startsWith('google-translate') && !value.startsWith('deepl')) {
+          // keep legacy behavior for translate providers; this branch remains strict for known providers
+          reply.status(400).send({ error: `Invalid value for ${key}` })
+          return
+        } else if (!allowed.includes(value) && !isCustomProviderIdValue(value)) {
+          reply.status(400).send({ error: `Invalid value for ${key}` })
+          return
+        }
+      }
       if (allowed && !allowed.includes(value)) {
         // Skip static model list check when provider is ollama or vllm (dynamic models)
         const modelKeyPair = PROVIDER_MODEL_PAIRS.find(p => p.modelKey === key)
-        if (modelKeyPair) {
+      if (modelKeyPair) {
           const provider = body[modelKeyPair.providerKey] !== undefined
             ? String(body[modelKeyPair.providerKey])
             : getSetting(modelKeyPair.providerKey)
-          if (provider === 'ollama' || provider === 'vllm') {
+          if (
+            provider === 'ollama'
+            || provider === 'vllm'
+            || provider === 'deepseek'
+            || provider === 'mimo'
+            || provider === 'opencode-zen'
+            || provider === 'opencode-go'
+            || provider === 'custom'
+            || isCustomProviderIdValue(provider || '')
+          ) {
             upsertSetting(key, value)
             updated = true
             continue
@@ -573,11 +724,22 @@ export async function settingsRoutes(api: FastifyInstance): Promise<void> {
     vllm: 'api_key.vllm',
     'google-translate': 'api_key.google_translate',
     deepl: 'api_key.deepl',
+    deepseek: 'api_key.deepseek',
+    mimo: 'api_key.mimo',
+    'opencode-zen': 'api_key.opencode_zen',
+    'opencode-go': 'api_key.opencode_go',
+  }
+
+  function resolveProviderApiKeySetting(provider: string): string | null {
+    if (isCustomProviderIdValue(provider)) {
+      return getCustomProviderApiKeySettingKey(provider)
+    }
+    return PROVIDER_KEY_MAP[provider] || null
   }
 
   api.get('/api/settings/api-keys/:provider', async (request, reply) => {
     const { provider } = ProviderParams.parse(request.params)
-    const settingKey = PROVIDER_KEY_MAP[provider]
+    const settingKey = resolveProviderApiKeySetting(provider)
     if (!settingKey) {
       reply.status(400).send({ error: `Unknown provider: ${provider}` })
       return
@@ -587,7 +749,7 @@ export async function settingsRoutes(api: FastifyInstance): Promise<void> {
 
   api.post('/api/settings/api-keys/:provider', { preHandler: [requireJson] }, async (request, reply) => {
     const { provider } = ProviderParams.parse(request.params)
-    const settingKey = PROVIDER_KEY_MAP[provider]
+    const settingKey = resolveProviderApiKeySetting(provider)
     if (!settingKey) {
       reply.status(400).send({ error: `Unknown provider: ${provider}` })
       return
@@ -703,6 +865,553 @@ export async function settingsRoutes(api: FastifyInstance): Promise<void> {
         ok: true,
         model_count: data.data?.length || 0,
       })
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Connection failed'
+      reply.send({ ok: false, error: message })
+    }
+  })
+
+  // --- DeepSeek endpoints ---
+
+  async function deepseekFetch(path: string): Promise<Response> {
+    const { getDeepSeekApiKey, getDeepSeekBaseUrl } = await import('../providers/llm/deepseek.js')
+    const apiKey = getDeepSeekApiKey()
+    const baseUrl = getDeepSeekBaseUrl().replace(/\/+$/, '').replace(/\/v1$/, '')
+    const headers: Record<string, string> = {}
+    if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`
+    return fetch(`${baseUrl}${path}`, { headers, signal: AbortSignal.timeout(10_000) })
+  }
+
+  function isLikelyDeepSeekApiKey(apiKey: string): boolean {
+    return /^sk-[A-Za-z0-9_-]{10,}$/.test(apiKey)
+  }
+
+  api.get('/api/settings/deepseek/models', async (_request, reply) => {
+    try {
+      const res = await deepseekFetch('/v1/models')
+      if (!res.ok) {
+        reply.send({ models: [] })
+        return
+      }
+      const data = await res.json() as { data?: Array<{ id: string }> }
+      const models = (data.data || []).map(m => ({ name: m.id }))
+      reply.send({ models })
+    } catch {
+      reply.send({ models: [] })
+    }
+  })
+
+  api.get('/api/settings/deepseek/status', async (_request, reply) => {
+    try {
+      const { getDeepSeekApiKey } = await import('../providers/llm/deepseek.js')
+      const apiKey = getDeepSeekApiKey()
+      if (!apiKey) {
+        reply.send({ ok: false, error: 'API key not configured' })
+        return
+      }
+      if (!isLikelyDeepSeekApiKey(apiKey)) {
+        reply.send({ ok: false, error: 'Invalid DeepSeek API key format' })
+        return
+      }
+
+      const res = await deepseekFetch('/v1/models')
+      if (!res.ok) {
+        reply.send({ ok: false, error: `HTTP ${res.status}` })
+        return
+      }
+      const data = await res.json() as { data?: unknown[] }
+      if (!Array.isArray(data.data)) {
+        reply.send({ ok: false, error: 'Unexpected DeepSeek response format' })
+        return
+      }
+      reply.send({ ok: true, model_count: data.data?.length || 0 })
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Connection failed'
+      reply.send({ ok: false, error: message })
+    }
+  })
+
+  // --- Mimo endpoints ---
+
+  async function mimoFetch(path: string): Promise<Response> {
+    const { getMimoApiKey, getMimoBaseUrl } = await import('../providers/llm/mimo.js')
+    const apiKey = getMimoApiKey()
+    const baseUrl = getMimoBaseUrl().replace(/\/+$/, '').replace(/\/v1$/, '')
+    const headers: Record<string, string> = {}
+    if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`
+    return fetch(`${baseUrl}${path}`, { headers, signal: AbortSignal.timeout(10_000) })
+  }
+
+  api.get('/api/settings/mimo/models', async (_request, reply) => {
+    try {
+      const res = await mimoFetch('/v1/models')
+      if (!res.ok) {
+        reply.send({ models: [] })
+        return
+      }
+      const data = await res.json() as { data?: Array<{ id: string }> }
+      const models = (data.data || []).map(m => ({ name: m.id }))
+      reply.send({ models })
+    } catch {
+      reply.send({ models: [] })
+    }
+  })
+
+  api.get('/api/settings/mimo/status', async (_request, reply) => {
+    try {
+      const res = await mimoFetch('/v1/models')
+      if (!res.ok) {
+        reply.send({ ok: false, error: `HTTP ${res.status}` })
+        return
+      }
+      const data = await res.json() as { data?: unknown[] }
+      reply.send({ ok: true, model_count: data.data?.length || 0 })
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Connection failed'
+      reply.send({ ok: false, error: message })
+    }
+  })
+
+  // --- OpenCode gateway endpoints (zen + go) ---
+
+  const OPENCODE_GATEWAYS = ['opencode-zen', 'opencode-go'] as const
+
+  async function opCodeFetch(gateway: 'opencode-zen' | 'opencode-go', path: string): Promise<Response> {
+    const { getOpenCodeApiKey, getOpenCodeBaseUrl } = await import('../providers/llm/opencode-gateway.js')
+    const apiKey = getOpenCodeApiKey(gateway)
+    const baseUrl = getOpenCodeBaseUrl(gateway).replace(/\/+$/, '').replace(/\/v1$/, '')
+    const headers: Record<string, string> = {}
+    if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`
+    return fetch(`${baseUrl}${path}`, { headers, signal: AbortSignal.timeout(10_000) })
+  }
+
+  for (const gateway of OPENCODE_GATEWAYS) {
+    api.get(`/api/settings/${gateway}/models`, async (_request, reply) => {
+      try {
+        const res = await opCodeFetch(gateway, '/v1/models')
+        if (!res.ok) {
+          reply.send({ models: [] })
+          return
+        }
+        const data = await res.json() as { data?: Array<{ id: string }> }
+        const models = (data.data || []).map(m => ({ name: m.id }))
+        reply.send({ models })
+      } catch {
+        reply.send({ models: [] })
+      }
+    })
+
+    api.get(`/api/settings/${gateway}/status`, async (_request, reply) => {
+      try {
+        const { getOpenCodeApiKey } = await import('../providers/llm/opencode-gateway.js')
+        if (!getOpenCodeApiKey(gateway)) {
+          reply.send({ ok: false, error: 'API key not configured' })
+          return
+        }
+        const res = await opCodeFetch(gateway, '/v1/models')
+        if (!res.ok) {
+          reply.send({ ok: false, error: `HTTP ${res.status}` })
+          return
+        }
+        const data = await res.json() as { data?: unknown[] }
+        if (!Array.isArray(data.data)) {
+          reply.send({ ok: false, error: 'Unexpected OpenCode gateway response format' })
+          return
+        }
+        reply.send({ ok: true, model_count: data.data?.length || 0 })
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : 'Connection failed'
+        reply.send({ ok: false, error: message })
+      }
+    })
+  }
+
+  // --- Custom provider registry endpoints ---
+
+  const CustomProviderPayload = z.object({
+    providerId: z.string().optional().nullable(),
+    name: z.string().trim().min(1),
+    baseUrl: z.string().trim().min(1),
+    apiKey: z.string().optional(),
+    apiFormat: z.enum(['openai', 'anthropic']).optional(),
+    models: z.array(z.string().trim().min(1)).min(1),
+  })
+
+  const CustomProviderParams = z.object({ providerId: z.string() })
+
+  api.get('/api/settings/custom-providers', async (_request, reply) => {
+    const providers = getAllCustomProvidersForSettings()
+    reply.send({ providers })
+  })
+
+  api.post('/api/settings/custom-providers', { preHandler: [requireJson] }, async (request, reply) => {
+    const body = parseOrBadRequest(CustomProviderPayload, request.body, reply)
+    if (!body) return
+
+    const { providerId, name, baseUrl, apiKey, apiFormat, models: rawModels } = body
+    const models = normalizeCustomModels(rawModels)
+    if (!models.length) {
+      reply.status(400).send({ error: 'At least one model is required' })
+      return
+    }
+
+    try {
+      await assertSafeUrl(baseUrl)
+    } catch {
+      reply.status(400).send({ error: 'Invalid or blocked URL' })
+      return
+    }
+
+    const persisted = readStoredCustomProviders()
+    const nextProviderId = providerId?.trim() || generateCustomProviderId()
+    const isExisting = persisted.some(item => item.id === nextProviderId)
+
+    if (providerId && !isCustomProviderIdValue(providerId)) {
+      reply.status(400).send({ error: `Invalid providerId: ${providerId}` })
+      return
+    }
+    if (providerId && !isExisting && nextProviderId === 'custom') {
+      reply.status(400).send({ error: 'custom is reserved for legacy provider' })
+      return
+    }
+
+    const resolvedApiFormat = apiFormat || 'openai'
+    const list = isExisting
+      ? persisted.map(item => (item.id === nextProviderId ? { ...item, name, baseUrl, apiFormat: resolvedApiFormat, models } : item))
+      : [...persisted, { id: nextProviderId, name, baseUrl, apiFormat: resolvedApiFormat, models }]
+
+    persistCustomProviders(list)
+    const settingKey = getCustomProviderApiKeySettingKey(nextProviderId)
+    if (!settingKey) {
+      reply.status(500).send({ error: 'Unable to resolve provider key' })
+      return
+    }
+    if (apiKey && apiKey.trim()) {
+      upsertSetting(settingKey, apiKey.trim())
+    } else if (!isExisting) {
+      deleteSetting(settingKey)
+    }
+
+    reply.send({ provider: { ...list.find(item => item.id === nextProviderId)! }, configured: !!getSetting(settingKey) })
+  })
+
+  api.delete('/api/settings/custom-providers/:providerId', async (request, reply) => {
+    const { providerId } = CustomProviderParams.parse(request.params)
+    if (!isCustomProviderIdValue(providerId)) {
+      reply.status(400).send({ error: `Invalid providerId: ${providerId}` })
+      return
+    }
+
+    if (providerId === 'custom') {
+      deleteSetting('custom.base_url')
+      deleteSetting('custom.name')
+      deleteSetting('custom.models')
+      deleteSetting('api_key.custom')
+      deleteSetting(PROVIDER_LIST_KEY)
+      reply.send({ ok: true })
+      return
+    }
+
+    const persisted = readStoredCustomProviders()
+    const next = persisted.filter(item => item.id !== providerId)
+    if (next.length === persisted.length) {
+      reply.status(404).send({ error: `Provider not found: ${providerId}` })
+      return
+    }
+    const settingKey = getCustomProviderApiKeySettingKey(providerId)
+    if (settingKey) deleteSetting(settingKey)
+    persistCustomProviders(next)
+    reply.send({ ok: true })
+  })
+
+  api.get('/api/settings/custom-providers/:providerId/status', async (request, reply) => {
+    const { providerId } = CustomProviderParams.parse(request.params)
+    if (!isCustomProviderIdValue(providerId)) {
+      reply.status(400).send({ error: `Invalid providerId: ${providerId}` })
+      return
+    }
+    if (providerId === 'custom') {
+      try {
+        const res = await customFetch('/v1/models')
+        if (!res.ok) {
+          reply.send({ ok: false, error: `HTTP ${res.status}` })
+          return
+        }
+        const data = await res.json() as { data?: unknown[] }
+        reply.send({ ok: true, model_count: data.data?.length || 0 })
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : 'Connection failed'
+        reply.send({ ok: false, error: message })
+      }
+      return
+    }
+    const config = getCustomProviderConfig(providerId)
+    if (!config) {
+      reply.status(404).send({ error: `Provider not found: ${providerId}` })
+      return
+    }
+    const apiKey = getSetting(getCustomProviderApiKeySettingKey(providerId) || '')
+    try {
+      const res = await customFetchWithConfig(config.baseUrl, apiKey || '', '/v1/models', config.apiFormat)
+      if (!res.ok) {
+        reply.send({ ok: false, error: `HTTP ${res.status}` })
+        return
+      }
+      const data = await res.json() as { data?: unknown[] }
+      reply.send({ ok: true, model_count: data.data?.length || 0 })
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Connection failed'
+      reply.send({ ok: false, error: message })
+    }
+  })
+
+  async function customFetch(path: string): Promise<Response> {
+    const { getCustomBaseUrl, getCustomProviderApiKey } = await import('../providers/llm/custom.js')
+    const baseUrl = getCustomBaseUrl()
+    if (!baseUrl) throw new Error('CUSTOM_BASE_URL_NOT_SET')
+    const apiKey = getCustomProviderApiKey()
+    return customFetchWithConfig(baseUrl, apiKey, path, 'openai')
+  }
+
+  async function customFetchWithConfig(baseUrl: string, apiKey: string, path: string, apiFormat: 'openai' | 'anthropic' = 'openai'): Promise<Response> {
+    const headers: Record<string, string> = {}
+    if (apiFormat === 'anthropic') {
+      if (apiKey) headers['x-api-key'] = apiKey
+      headers['anthropic-version'] = '2023-06-01'
+    } else if (apiKey) {
+      headers['Authorization'] = `Bearer ${apiKey}`
+    }
+    const normalizedBaseUrl = baseUrl.replace(/\/+$/, '').replace(/\/v1$/i, '')
+    return fetch(`${normalizedBaseUrl}${path}`, { headers, signal: AbortSignal.timeout(10_000) })
+  }
+
+  const CustomModelsPreviewBody = z.object({
+    baseUrl: z.string().min(1),
+    providerId: z.string().optional().nullable(),
+    apiKey: z.string().optional(),
+    apiFormat: z.enum(['openai', 'anthropic']).optional(),
+  })
+
+  api.get('/api/settings/custom/models', async (_request, reply) => {
+    try {
+      const res = await customFetch('/v1/models')
+      if (!res.ok) {
+        reply.send({ models: [] })
+        return
+      }
+      const data = await res.json() as { data?: Array<{ id: string }>; models?: Array<{ id: string } | string> }
+      const rawModels = data.data?.length ? data.data : (data.models || [])
+      const models = rawModels.map(item => {
+        if (typeof item === 'string') return { name: item }
+        return { name: item.id }
+      }).filter(m => !!m.name)
+      reply.send({ models })
+    } catch {
+      reply.send({ models: [] })
+    }
+  })
+
+  api.post('/api/settings/custom/models/preview', { preHandler: [requireJson] }, async (request, reply) => {
+    const body = parseOrBadRequest(CustomModelsPreviewBody, request.body, reply)
+    if (!body) return
+    const providerId = (body.providerId || '').trim()
+    const fallbackApiKey = providerId
+      ? getSetting(getCustomProviderApiKeySettingKey(providerId) || '')
+      : ''
+    const apiKey = body.apiKey || fallbackApiKey || ''
+    try {
+      const res = await customFetchWithConfig(body.baseUrl, apiKey, '/v1/models', body.apiFormat || 'openai')
+      if (!res.ok) {
+        reply.send({ models: [] })
+        return
+      }
+      const data = await res.json() as { data?: Array<{ id: string }>; models?: Array<{ id: string } | string> }
+      const rawModels = data.data?.length ? data.data : (data.models || [])
+      const models = rawModels.map(item => {
+        if (typeof item === 'string') return { name: item }
+        return { name: item.id }
+      }).filter(m => !!m.name)
+      reply.send({ models })
+    } catch {
+      reply.send({ models: [] })
+    }
+  })
+
+  api.get('/api/settings/custom/status', async (_request, reply) => {
+    try {
+      const res = await customFetch('/v1/models')
+      if (!res.ok) {
+        reply.send({ ok: false, error: `HTTP ${res.status}` })
+        return
+      }
+      const data = await res.json() as { data?: unknown[] }
+      reply.send({ ok: true, model_count: data.data?.length || 0 })
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Connection failed'
+      reply.send({ ok: false, error: message })
+    }
+  })
+
+  // --- Anthropic status endpoint ---
+
+  async function anthropicFetch(path: string): Promise<Response> {
+    const key = getSetting('api_key.anthropic') || ''
+    const baseUrl = (getSetting('anthropic.base_url') || 'https://api.anthropic.com')
+      .replace(/\/+$/, '')
+      .replace(/\/v1$/, '')
+    return fetch(`${baseUrl}${path}`, {
+      headers: {
+        'x-api-key': key,
+        'anthropic-version': '2023-06-01',
+      },
+      signal: AbortSignal.timeout(10_000),
+    })
+  }
+
+  function isLikelyAnthropicApiKey(apiKey: string): boolean {
+    return /^sk-ant-[A-Za-z0-9_-]{10,}$/.test(apiKey)
+  }
+
+  api.get('/api/settings/anthropic/status', async (_request, reply) => {
+    const key = getSetting('api_key.anthropic')
+    if (!key) {
+      reply.send({ ok: false, error: 'API key not configured' })
+      return
+    }
+    if (!isLikelyAnthropicApiKey(key)) {
+      reply.send({ ok: false, error: 'Invalid Anthropic API key format' })
+      return
+    }
+    try {
+      const res = await anthropicFetch('/v1/models')
+      if (!res.ok) {
+        reply.send({ ok: false, error: `HTTP ${res.status}` })
+        return
+      }
+      const data = await res.json() as { data?: unknown[] }
+      if (!Array.isArray(data.data)) {
+        reply.send({ ok: false, error: 'Unexpected Anthropic response format' })
+        return
+      }
+      reply.send({ ok: true, model_count: data.data?.length || 0 })
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Connection failed'
+      reply.send({ ok: false, error: message })
+    }
+  })
+
+  // --- OpenAI status endpoint ---
+
+  async function openaiFetch(path: string): Promise<Response> {
+    const { getOpenAIBaseUrl } = await import('../providers/llm/openai.js')
+    const apiKey = getSetting('api_key.openai') || ''
+    const baseUrl = getOpenAIBaseUrl().replace(/\/+$/, '').replace(/\/v1$/, '')
+    const headers: Record<string, string> = {}
+    if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`
+    return fetch(`${baseUrl}${path}`, { headers, signal: AbortSignal.timeout(10_000) })
+  }
+
+  api.get('/api/settings/openai/status', async (_request, reply) => {
+    try {
+      const res = await openaiFetch('/v1/models')
+      if (!res.ok) {
+        reply.send({ ok: false, error: `HTTP ${res.status}` })
+        return
+      }
+      const data = await res.json() as { data?: unknown[] }
+      reply.send({ ok: true, model_count: data.data?.length || 0 })
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Connection failed'
+      reply.send({ ok: false, error: message })
+    }
+  })
+
+  // --- Gemini status endpoint ---
+
+  async function geminiFetch(path: string): Promise<Response> {
+    const key = getSetting('api_key.gemini') || ''
+    const baseUrl = (getSetting('gemini.base_url') || 'https://generativelanguage.googleapis.com')
+      .replace(/\/+$/, '')
+      .replace(/\/v1beta$/, '')
+      .replace(/\/v1$/, '')
+    const url = new URL(`${baseUrl}${path}`)
+    url.searchParams.set('key', key)
+    return fetch(url, { signal: AbortSignal.timeout(10_000) })
+  }
+
+  api.get('/api/settings/gemini/status', async (_request, reply) => {
+    const key = getSetting('api_key.gemini')
+    if (!key) {
+      reply.send({ ok: false, error: 'API key not configured' })
+      return
+    }
+    try {
+      const res = await geminiFetch('/v1beta/models')
+      if (!res.ok) {
+        reply.send({ ok: false, error: `HTTP ${res.status}` })
+        return
+      }
+      const data = await res.json() as { models?: unknown[] }
+      reply.send({ ok: true, model_count: data.models?.length || 0 })
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Connection failed'
+      reply.send({ ok: false, error: message })
+    }
+  })
+
+  // --- Google Translate status endpoint ---
+
+  async function googleTranslateFetch(path: string): Promise<Response> {
+    const key = getSetting('api_key.google_translate') || ''
+    const url = new URL(`https://translation.googleapis.com${path}`)
+    url.searchParams.set('key', key)
+    return fetch(url, { signal: AbortSignal.timeout(10_000) })
+  }
+
+  api.get('/api/settings/google-translate/status', async (_request, reply) => {
+    const key = getSetting('api_key.google_translate')
+    if (!key) {
+      reply.send({ ok: false, error: 'API key not configured' })
+      return
+    }
+    try {
+      const res = await googleTranslateFetch('/language/translate/v2/languages')
+      if (!res.ok) {
+        reply.send({ ok: false, error: `HTTP ${res.status}` })
+        return
+      }
+      const data = await res.json() as { data?: { languages?: unknown[] } }
+      reply.send({ ok: true, language_count: data.data?.languages?.length || 0 })
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Connection failed'
+      reply.send({ ok: false, error: message })
+    }
+  })
+
+  // --- DeepL status endpoint ---
+
+  async function deeplFetch(path: string): Promise<Response> {
+    const key = getSetting('api_key.deepl') || ''
+    const baseUrl = key.endsWith(':fx') ? 'https://api-free.deepl.com' : 'https://api.deepl.com'
+    return fetch(`${baseUrl}${path}`, {
+      headers: { Authorization: `DeepL-Auth-Key ${key}` },
+      signal: AbortSignal.timeout(10_000),
+    })
+  }
+
+  api.get('/api/settings/deepl/status', async (_request, reply) => {
+    const key = getSetting('api_key.deepl')
+    if (!key) {
+      reply.send({ ok: false, error: 'API key not configured' })
+      return
+    }
+    try {
+      const res = await deeplFetch('/v2/usage')
+      if (!res.ok) {
+        reply.send({ ok: false, error: `HTTP ${res.status}` })
+        return
+      }
+      reply.send({ ok: true })
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Connection failed'
       reply.send({ ok: false, error: message })

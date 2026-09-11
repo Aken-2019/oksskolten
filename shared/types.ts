@@ -68,6 +68,7 @@ export interface ArticleListItem {
   url: string
   published_at: string | null
   lang: string | null
+  title_translated: string | null
   summary: string | null
   excerpt: string | null
   og_image: string | null
@@ -77,6 +78,7 @@ export interface ArticleListItem {
   liked_at: string | null
   score?: number
   similar_count?: number
+  reading_time_mins?: number | null
 }
 
 export interface ArticleDetail extends ArticleListItem {

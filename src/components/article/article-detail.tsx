@@ -21,7 +21,7 @@ import { formatDetailDate } from '../../lib/dateFormat'
 import { useAppLayout } from '../../app'
 import { Skeleton } from '../ui/skeleton'
 import { Callout } from '../ui/callout'
-import { ArticleZapNavigation } from './article-zap-navigation'
+import { SanitizedHTML } from '../ui/sanitized-html'
 import { ArticleToolbar } from './article-toolbar'
 import { ArticleSummarySection } from './article-summary-section'
 import { ArticleTranslationBanner } from './article-translation-banner'
@@ -29,26 +29,77 @@ import { ArticleContentBody } from './article-content-body'
 import { ArticleSimilarBanner } from './article-similar-banner'
 import type { ArticleDetail as ArticleDetailData } from '../../../shared/types'
 
-interface ArticleDetailProps {
-  articleUrl: string
-  enableZapNavigation?: boolean
+/** Split markdown into paragraph chunks, keeping fenced code blocks intact. */
+function splitParagraphs(md: string): string[] {
+  const chunks: string[] = []
+  const parts = md.split(/(```[\s\S]*?```)/g)
+  let current = ''
+  for (let i = 0; i < parts.length; i++) {
+    if (i % 2 === 1) {
+      current += parts[i]
+    } else {
+      const segments = parts[i].split(/\n\n+/)
+      for (let j = 0; j < segments.length; j++) {
+        if (j === 0) {
+          current += segments[j]
+        } else {
+          if (current.trim()) chunks.push(current.trim())
+          current = segments[j]
+        }
+      }
+    }
+  }
+  if (current.trim()) chunks.push(current.trim())
+  return chunks
 }
 
-export function ArticleDetail({ articleUrl, enableZapNavigation = false }: ArticleDetailProps) {
-  const { settings: { internalLinks, chatPosition, translateTargetLang } } = useAppLayout()
+/**
+ * Returns true when the paragraph contains only media elements (images, figures)
+ * and should be rendered standalone in immersive mode without a translation pair.
+ */
+function isMediaParagraph(md: string): boolean {
+  const stripped = md.trim()
+  // Remove markdown images: ![alt](url)
+  const withoutMdImages = stripped.replace(/!\[[^\]]*\]\([^)]+\)/g, '')
+  // Remove HTML img / picture / figure / video tags
+  const withoutHtmlMedia = withoutMdImages.replace(/<(img|picture|figure|video|source)\b[^>]*\/?>/gi, '')
+  return withoutHtmlMedia.trim() === ''
+}
+
+interface ArticleDetailProps {
+  articleUrl: string
+}
+
+export function ArticleDetail({ articleUrl }: ArticleDetailProps) {
+  const { settings: { internalLinks, chatPosition, translateProvider, translateModel, translateTargetLang, translateSourceLang, summaryAuto, translateAuto, translateTitleAuto, colorMode, setColorMode } } = useAppLayout()
   const navigate = useNavigate()
   const { t, tError, isKeyNotSetError, locale } = useI18n()
   const articleKey = `/api/articles/by-url?url=${encodeURIComponent(articleUrl)}`
   const { data: article, error, mutate } = useSWR<ArticleDetailData>(articleKey, fetcher)
   const { mutate: globalMutate } = useSWRConfig()
 
-  const isUserLang = article?.lang === (translateTargetLang || locale)
+  const titleTarget = translateTargetLang || locale
+  const titleAlreadyInLang = article ? (() => {
+    const t = article.title; const len = t.length || 1
+    const kana = (t.match(/[\u3040-\u30FF]/g) || []).length
+    const cjk  = (t.match(/[\u4E00-\u9FFF]/g) || []).length
+    if (titleTarget === 'ja') return (kana + cjk) / len > 0.15
+    if (titleTarget === 'zh') return kana / len < 0.02 && cjk / len > 0.15
+    return false
+  })() : false
+  const isUserLang = article?.lang === (translateTargetLang || locale) || titleAlreadyInLang
+  const translateTarget = translateTargetLang || locale
+  const translateSource = translateSourceLang || ''
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null)
 
   const articleRef = useRef<HTMLElement>(null)
 
   const metrics = useMetrics()
-  const { summary, summarizing, streamingText, handleSummarize, summaryHtml, streamingHtml, error: summarizeError } = useSummarize(article, metrics)
+  const { summary, summarizing, streamingText, handleSummarize, summaryHtml, streamingHtml, error: summarizeError } = useSummarize(
+    article,
+    metrics,
+    summaryAuto === 'on',
+  )
   // Only pass translation to the hook if it matches the current locale; stale translations are treated as absent
   const isTranslationCurrent = article?.translated_lang === (translateTargetLang || locale)
   const translateInput = useMemo(() =>
@@ -56,11 +107,41 @@ export function ArticleDetail({ articleUrl, enableZapNavigation = false }: Artic
     [article, isTranslationCurrent],
   )
   const { viewMode, setViewMode, translating, translatingText, fullTextTranslated, handleTranslate, translatingHtml, error: translateError } = useTranslate(translateInput, metrics)
+
+  const autoTranslateKey = useMemo(() => {
+    if (!article || isUserLang || translateAuto !== 'on' || !translateProvider || fullTextTranslated) {
+      return null
+    }
+    return `${article.id}:${translateProvider}:${translateModel || ''}:${translateTarget}:${translateSource}`
+  }, [article, isUserLang, translateAuto, translateProvider, translateModel, translateSource, translateTarget, fullTextTranslated])
+  const autoTranslateStartedRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (!autoTranslateKey || translating) return
+    if (autoTranslateStartedRef.current === autoTranslateKey) return
+    autoTranslateStartedRef.current = autoTranslateKey
+    void handleTranslate()
+  }, [autoTranslateKey, handleTranslate, translating])
   const {
     isBookmarked, isLiked, archivingImages, deleteConfirmOpen, setDeleteConfirmOpen,
     toggleBookmark, toggleLike, handleArchiveImages, handleDelete,
   } = useArticleActions(article, articleKey)
   const chat = useChatInline(article?.id ?? 0)
+
+  // Back-to-top visibility — throttled via RAF to avoid 60fps re-renders
+  const [showBackToTop, setShowBackToTop] = useState(false)
+  useEffect(() => {
+    let ticking = false
+    const onScroll = () => {
+      if (ticking) return
+      ticking = true
+      requestAnimationFrame(() => {
+        setShowBackToTop(window.scrollY > 400)
+        ticking = false
+      })
+    }
+    window.addEventListener('scroll', onScroll, { passive: true })
+    return () => window.removeEventListener('scroll', onScroll)
+  }, [])
 
   // Sync translation/summary back into SWR cache so it persists across navigations
   useEffect(() => {
@@ -96,6 +177,32 @@ export function ArticleDetail({ articleUrl, enableZapNavigation = false }: Artic
 
   const content = useMemo(() => {
     if (!article) return ''
+
+    // While translating, always show original so the streaming callout is the focus
+    if (translating) {
+      return sanitizeHtml(renderMarkdown(article.full_text || ''))
+    }
+
+    if (viewMode === 'immersive' && fullTextTranslated && !isUserLang) {
+      const originalParas = splitParagraphs(article.full_text || '')
+      const translatedParas = splitParagraphs(fullTextTranslated)
+      let translatedIdx = 0
+      let html = ''
+      for (const para of originalParas) {
+        if (isMediaParagraph(para)) {
+          // Render media elements at full opacity without a translation pair
+          html += `<div class="immersive-media">${sanitizeHtml(renderMarkdown(para))}</div>`
+        } else {
+          html += `<div class="immersive-source">${sanitizeHtml(renderMarkdown(para))}</div>`
+          if (translatedParas[translatedIdx]) {
+            html += `<div class="immersive-translation">${sanitizeHtml(renderMarkdown(translatedParas[translatedIdx]))}</div>`
+            translatedIdx++
+          }
+        }
+      }
+      return html
+    }
+
     let md = ''
     if (viewMode === 'translated' && !isUserLang) {
       md = fullTextTranslated || ''
@@ -104,7 +211,7 @@ export function ArticleDetail({ articleUrl, enableZapNavigation = false }: Artic
     }
     if (!md) return `<p class="text-muted">${t('article.noContent')}</p>`
     return sanitizeHtml(renderMarkdown(md))
-  }, [article, viewMode, isUserLang, fullTextTranslated, t])
+  }, [article, viewMode, isUserLang, fullTextTranslated, translating, t])
 
   const { rewrittenHtml: displayContent } = useRewriteInternalLinks(
     content,
@@ -182,17 +289,10 @@ export function ArticleDetail({ articleUrl, enableZapNavigation = false }: Artic
 
   return (
     <>
-      {enableZapNavigation && (
-        <ArticleZapNavigation
-          currentArticleId={String(article.id)}
-          onBookmarkToggle={toggleBookmark}
-          onOpenExternal={() => window.open(article.url, '_blank')}
-        />
-      )}
       <article ref={articleRef} className="article-card max-w-2xl mx-auto px-6 md:px-10 py-8">
       {/* Title */}
       <h1 className="mb-1.5 text-[28px] font-bold leading-[1.3] break-words [overflow-wrap:anywhere]">
-        {article.title}
+        {(translateTitleAuto === 'on' && !isUserLang && article.title_translated) ? article.title_translated : article.title}
       </h1>
 
       {/* Date */}
@@ -204,7 +304,6 @@ export function ArticleDetail({ articleUrl, enableZapNavigation = false }: Artic
         chatPosition={chatPosition}
         chatOpen={chat.open}
         onChatToggle={chat.toggle}
-        isUserLang={isUserLang}
         hasTranslation={hasTranslation}
         translating={translating}
         onTranslate={handleTranslate}
@@ -218,6 +317,8 @@ export function ArticleDetail({ articleUrl, enableZapNavigation = false }: Artic
         onToggleLike={toggleLike}
         onArchiveImages={handleArchiveImages}
         onDelete={() => setDeleteConfirmOpen(true)}
+        colorMode={colorMode}
+        onToggleColorMode={() => setColorMode(colorMode === 'dark' ? 'light' : colorMode === 'light' ? 'system' : 'dark')}
       />
 
       {/* Inline Chat Panel */}
@@ -264,23 +365,47 @@ export function ArticleDetail({ articleUrl, enableZapNavigation = false }: Artic
       )}
 
       {/* Language banner */}
-      {!isUserLang && hasTranslation && (
+      {!isUserLang && hasTranslation && !translating && (
         <ArticleTranslationBanner
           viewMode={viewMode}
-          onToggle={() => setViewMode(viewMode === 'translated' ? 'original' : 'translated')}
+          onSetMode={setViewMode}
         />
       )}
 
+      {/* Translation streaming callout */}
+      {translating && translatingText && (
+        <Callout>
+          <SanitizedHTML html={translatingHtml} className="prose prose-sm" />
+        </Callout>
+      )}
+      {translating && !translatingText && (
+        <Callout>
+          <Skeleton className="h-4 w-3/4 mb-2" />
+          <Skeleton className="h-4 w-1/2" />
+        </Callout>
+      )}
+
       {/* Content */}
-      <ArticleContentBody
-        translating={translating}
-        translatingText={translatingText}
-        translatingHtml={translatingHtml}
-        displayContent={displayContent}
-      />
+      <ArticleContentBody displayContent={displayContent} />
       <ImageLightbox src={lightboxSrc} onClose={() => setLightboxSrc(null)} />
     </article>
     {chatPosition === 'fab' && article && <ChatFab key={article.id} articleId={article.id} />}
+    {showBackToTop && (
+      <button
+        type="button"
+        onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+        className={`fixed right-6 z-50 w-12 h-12 rounded-full bg-accent text-accent-text flex items-center justify-center shadow-lg hover:opacity-90 transition-opacity select-none ${
+          chatPosition === 'fab'
+            ? 'bottom-[calc(5rem+var(--safe-area-inset-bottom))]'
+            : 'bottom-[calc(1.5rem+var(--safe-area-inset-bottom))]'
+        }`}
+        aria-label="Back to top"
+      >
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M8 13V3M3 8l5-5 5 5" />
+        </svg>
+      </button>
+    )}
     {deleteConfirmOpen && (
       <ConfirmDialog
         title={t('article.delete')}

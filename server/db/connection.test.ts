@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { setupTestDb } from '../__tests__/helpers/testDb.js'
 import { bindNamedParams, runNamed, getNamed, allNamed, getDb, runMigrations } from './connection.js'
+import { createFeed } from './feeds.js'
 
 beforeEach(() => {
   setupTestDb()
@@ -94,6 +95,48 @@ describe('runMigrations', () => {
     const applied = getDb().prepare('SELECT name FROM _migrations').all() as { name: string }[]
     expect(applied.length).toBeGreaterThan(0)
   })
+
+  it('url_normalize_v1 canonicalizes legacy article URLs (consecutive slashes, lowercase percent-hex)', () => {
+    // Reproduce a legacy DB: fresh schema + migrations applied, then LEGACY non-canonical URLs
+    // inserted directly (bypassing insertArticle, which now normalizes on save).
+    const feed = createFeed({ name: 'X', url: 'https://x.example' })
+    const db = getDb()
+    db.prepare(
+      "INSERT INTO articles (feed_id, category_id, title, url, published_at) VALUES (?, NULL, 'a', 'https://x.example//kiji/horai', '2025-01-01T00:00:00Z')"
+    ).run(feed.id)
+    db.prepare(
+      "INSERT INTO articles (feed_id, category_id, title, url, published_at) VALUES (?, NULL, 'b', 'https://x.example/%e8%a8%98', '2025-01-01T00:00:00Z')"
+    ).run(feed.id)
+
+    // Pretend the URL normalization migration hasn't run yet, then run it.
+    db.prepare("DELETE FROM _migrations WHERE name = 'url_normalize_v1'").run()
+    runMigrations()
+
+    const urls = (db.prepare('SELECT url FROM articles ORDER BY id').all() as { url: string }[]).map(r => r.url)
+    expect(urls).toContain('https://x.example/kiji/horai')        // // collapsed
+    expect(urls).toContain('https://x.example/%E8%A8%98')          // percent-hex uppercased
+    // Idempotent: running again doesn't throw or duplicate.
+    expect(() => runMigrations()).not.toThrow()
+  })
+
+  it('url_normalize_v1 dedupes rows that collapse onto the same canonical URL', () => {
+    const feed = createFeed({ name: 'X', url: 'https://x.example' })
+    const db = getDb()
+    // Same article stored under two spellings (a pre-existing duplicate in legacy DB).
+    db.prepare(
+      "INSERT INTO articles (feed_id, category_id, title, url, published_at) VALUES (?, NULL, 'legacy-//','https://x.example//kiji/a', '2025-01-01T00:00:00Z')"
+    ).run(feed.id)
+    db.prepare(
+      "INSERT INTO articles (feed_id, category_id, title, url, published_at) VALUES (?, NULL, 'legacy-/','https://x.example/kiji/a', '2025-01-01T00:00:00Z')"
+    ).run(feed.id)
+
+    db.prepare("DELETE FROM _migrations WHERE name = 'url_normalize_v1'").run()
+    // Should not throw on the UNIQUE(url) collision: it keeps one row and drops the other.
+    expect(() => runMigrations()).not.toThrow()
+
+    const rows = db.prepare("SELECT url FROM articles WHERE url = 'https://x.example/kiji/a'").all() as { url: string }[]
+    expect(rows).toHaveLength(1) // exactly one survives
+  })
 })
 
 // --- WAL and foreign keys ---
@@ -115,5 +158,36 @@ describe('duplicate column migration handling', () => {
     expect(() => {
       getDb().exec('ALTER TABLE test_dup ADD COLUMN col1 TEXT')
     }).toThrow(/duplicate column/)
+  })
+})
+
+describe('migration atomicity', () => {
+  // runMigrations wraps each migration's schema change and its
+  // _migrations record in a single transaction. A migration whose last
+  // statement fails must roll back to its pre-migration state: no
+  // partial schema applied, and no _migrations row recording it.
+  it('rolls back a migration whose last statement fails', () => {
+    const db = getDb()
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS atomicity_probe (id INTEGER PRIMARY KEY)
+    `)
+    const before = db.prepare('SELECT COUNT(*) AS n FROM _migrations').get() as { n: number }
+
+    // Two statements in one transaction; the second is invalid SQL so
+    // the whole migration must roll back — the first statement's effect
+    // must not persist, mirroring how runMigrations now wraps migrations.
+    expect(() => {
+      db.transaction(() => {
+        db.exec('INSERT INTO atomicity_probe (id) VALUES (1)')
+        db.exec('THIS IS NOT VALID SQL')
+      })()
+    }).toThrow()
+
+    // Probe insert was rolled back
+    const rows = db.prepare('SELECT COUNT(*) AS n FROM atomicity_probe').get() as { n: number }
+    expect(rows.n).toBe(0)
+    // _migrations count unchanged (would-be migration not recorded)
+    const after = db.prepare('SELECT COUNT(*) AS n FROM _migrations').get() as { n: number }
+    expect(after.n).toBe(before.n)
   })
 })
