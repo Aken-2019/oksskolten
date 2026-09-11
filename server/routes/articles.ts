@@ -155,8 +155,8 @@ function extractKnownErrorCode(err: unknown): string | null {
 interface AiHandlerConfig {
   getCached: (article: ArticleDetail, targetLang: string) => string | null
   validate?: (article: ArticleDetail, targetLang: string) => string | null
-  streamFn: (fullText: string, onDelta: (d: string) => void, targetLang: string) => Promise<{ text: string } & AiTextResult>
-  nonStreamFn: (fullText: string, targetLang: string) => Promise<{ text: string } & AiTextResult>
+  streamFn: (fullText: string, onDelta: (d: string) => void, targetLang: string, sessionId: string) => Promise<{ text: string } & AiTextResult>
+  nonStreamFn: (fullText: string, targetLang: string, sessionId: string) => Promise<{ text: string } & AiTextResult>
   applyResult: (articleId: number, text: string, targetLang: string) => void
   errorMessage: string
   errorCode: string
@@ -176,6 +176,7 @@ function createAiHandler(config: AiHandlerConfig) {
     const { stream, force, target_lang: targetLangParam } = parsedQuery
     const forceRecompute = force === '1' || force === 'true'
     const targetLang = targetLangParam ?? getTranslateTargetLang()
+    const sessionId = `article-${article.id}`
 
     const cached = config.getCached(article, targetLang)
     if (cached && !forceRecompute) {
@@ -201,13 +202,14 @@ function createAiHandler(config: AiHandlerConfig) {
           article.full_text,
           (delta) => { sse.send({ type: 'delta', text: delta }) },
           targetLang,
+          sessionId,
         )
         config.applyResult(article.id, result.text, targetLang)
         const usage = formatUsage(result)
         sse.send({ type: 'done', usage })
         sse.end()
       } else {
-        const result = await config.nonStreamFn(article.full_text, targetLang)
+        const result = await config.nonStreamFn(article.full_text, targetLang, sessionId)
         config.applyResult(article.id, result.text, targetLang)
         reply.send({ text: result.text, usage: formatUsage(result) })
       }
@@ -576,12 +578,12 @@ export async function articleRoutes(api: FastifyInstance): Promise<void> {
     { preHandler: [requireJson] },
     createAiHandler({
       getCached: (article) => article.summary,
-      streamFn: async (fullText, onDelta) => {
-        const r = await streamSummarizeArticle(fullText, onDelta)
+      streamFn: async (fullText, onDelta, _targetLang, sessionId) => {
+        const r = await streamSummarizeArticle(fullText, onDelta, sessionId)
         return { text: r.summary, ...r }
       },
-      nonStreamFn: async (fullText) => {
-        const r = await summarizeArticle(fullText)
+      nonStreamFn: async (fullText, _targetLang, sessionId) => {
+        const r = await summarizeArticle(fullText, sessionId)
         return { text: r.summary, ...r }
       },
       applyResult: (articleId, text) => {
@@ -602,12 +604,12 @@ export async function articleRoutes(api: FastifyInstance): Promise<void> {
       validate: (article, targetLang) => {
         return article.lang === targetLang ? `Article is already in ${targetLang}` : null
       },
-      streamFn: async (fullText, onDelta, targetLang) => {
-        const r = await streamTranslateArticle(fullText, onDelta, targetLang)
+      streamFn: async (fullText, onDelta, targetLang, sessionId) => {
+        const r = await streamTranslateArticle(fullText, onDelta, targetLang, sessionId)
         return { text: r.fullTextTranslated, ...r }
       },
-      nonStreamFn: async (fullText, targetLang) => {
-        const r = await translateArticle(fullText, targetLang)
+      nonStreamFn: async (fullText, targetLang, sessionId) => {
+        const r = await translateArticle(fullText, targetLang, sessionId)
         return { text: r.fullTextTranslated, ...r }
       },
       applyResult: (articleId, text, targetLang) => {
@@ -640,7 +642,7 @@ export async function articleRoutes(api: FastifyInstance): Promise<void> {
           const article = getArticleById(id)
           if (!article || article.lang === targetLang) return null
           if (article.title_translated) return { id, title_translated: article.title_translated }
-          const translated = await translateTitle(article.title, targetLang)
+          const translated = await translateTitle(article.title, targetLang, `article-${id}`)
           updateArticleContent(id, { title_translated: translated })
           return { id, title_translated: translated }
         }),

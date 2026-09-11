@@ -10,7 +10,10 @@ const mockGetSetting = vi.fn((key: string) => settings.get(key) ?? null)
 const mockChatCreate = vi.fn()
 const mockOpenAICtor = vi.fn()
 
-vi.mock('../../db.js', () => ({ getSetting: (key: string) => mockGetSetting(key) }))
+vi.mock('../../db.js', () => ({
+  getSetting: (key: string) => mockGetSetting(key),
+  upsertSetting: (key: string, value: string) => { settings.set(key, value) },
+}))
 
 vi.mock('openai', () => ({
   default: class {
@@ -106,5 +109,54 @@ describe('open opencode gateway providers', () => {
     expect(seen).toEqual(['he', 'llo'])
     expect(result).toEqual({ text: 'hello', inputTokens: 2, outputTokens: 1 })
     expect(mockOpenAICtor).toHaveBeenCalledWith({ baseURL: 'https://opencode.ai/zen/go/v1', apiKey: 'sk-go-1' })
+  })
+})
+
+describe('OpenCode gateway request headers', () => {
+  beforeEach(() => {
+    settings.clear()
+    mockGetSetting.mockClear()
+    mockChatCreate.mockClear()
+    mockOpenAICtor.mockClear()
+  })
+
+  it('sends a custom user agent and a stable session id on createMessage', async () => {
+    settings.set('api_key.opencode_go', 'sk-go-1')
+    mockChatCreate.mockResolvedValue({ choices: [{ message: { content: 'ok' } }], usage: {} })
+
+    await makeOpCodeProvider('opencode-go').createMessage({ ...baseParams, sessionId: 'conversation-42' })
+
+    const options = mockChatCreate.mock.calls[0][1] as { headers: Record<string, string> }
+    expect(options.headers['x-opencode-session']).toBe('conversation-42')
+    expect(options.headers['User-Agent']).toMatch(/^oksskolten\//)
+  })
+
+  it('sends the session header on streamMessage too', async () => {
+    settings.set('api_key.opencode_go', 'sk-go-1')
+    mockChatCreate.mockResolvedValue((async function* () {
+      yield { choices: [{ delta: { content: 'hi' } }] }
+    })())
+
+    await makeOpCodeProvider('opencode-go').streamMessage({ ...baseParams, sessionId: 'article-7' }, () => {})
+
+    const options = mockChatCreate.mock.calls[0][1] as { headers: Record<string, string> }
+    expect(options.headers['x-opencode-session']).toBe('article-7')
+  })
+
+  it('falls back to a persisted per-gateway session id when none is given', async () => {
+    settings.set('api_key.opencode_zen', 'sk-zen-1')
+    mockChatCreate.mockResolvedValue({ choices: [{ message: { content: 'ok' } }], usage: {} })
+
+    await makeOpCodeProvider('opencode-zen').createMessage(baseParams)
+
+    const first = (mockChatCreate.mock.calls[0][1] as { headers: Record<string, string> }).headers['x-opencode-session']
+    expect(first).toBeTruthy()
+    expect(settings.get('opencode_zen.session_id')).toBe(first)
+
+    // Stable across calls / client rebuilds
+    mockChatCreate.mockClear()
+    await makeOpCodeProvider('opencode-zen').createMessage(baseParams)
+    const second = (mockChatCreate.mock.calls[0][1] as { headers: Record<string, string> }).headers['x-opencode-session']
+    expect(second).toBe(first)
   })
 })

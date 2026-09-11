@@ -103,6 +103,7 @@ async function runAiTask(
   config: AiTaskConfig,
   fullText: string,
   onText?: (delta: string) => void,
+  sessionId?: string,
 ): Promise<{ text: string } & AiTextResult> {
   const providerName = getSetting(config.providerKey) || TASK_DEFAULTS.summarize.provider
   const model = getSetting(config.modelKey) || config.defaultModel
@@ -112,13 +113,14 @@ async function runAiTask(
   const maxTokens = resolveMaxTokens(config)
   const result = onText
     ? await provider.streamMessage(
-        { model, maxTokens, messages: [{ role: 'user', content: prompt }] },
+        { model, maxTokens, messages: [{ role: 'user', content: prompt }], sessionId },
         onText,
       )
     : await provider.createMessage({
         model,
         maxTokens,
         messages: [{ role: 'user', content: prompt }],
+        sessionId,
       })
   return {
     text: result.text,
@@ -150,20 +152,21 @@ const translateConfig: AiTaskConfig = {
   buildPrompt: buildTranslatePrompt,
 }
 
-export async function summarizeArticle(fullText: string): Promise<{ summary: string } & AiTextResult> {
-  const r = await runAiTask(summarizeConfig, fullText)
+export async function summarizeArticle(fullText: string, sessionId?: string): Promise<{ summary: string } & AiTextResult> {
+  const r = await runAiTask(summarizeConfig, fullText, undefined, sessionId)
   return { summary: r.text, inputTokens: r.inputTokens, outputTokens: r.outputTokens, billingMode: r.billingMode, model: r.model }
 }
 
 export async function streamSummarizeArticle(
   fullText: string,
   onText: (delta: string) => void,
+  sessionId?: string,
 ): Promise<{ summary: string } & AiTextResult> {
-  const r = await runAiTask(summarizeConfig, fullText, onText)
+  const r = await runAiTask(summarizeConfig, fullText, onText, sessionId)
   return { summary: r.text, inputTokens: r.inputTokens, outputTokens: r.outputTokens, billingMode: r.billingMode, model: r.model }
 }
 
-export async function translateTitle(title: string, targetLangOverride?: string | null): Promise<string> {
+export async function translateTitle(title: string, targetLangOverride?: string | null, sessionId?: string): Promise<string> {
   const provider = getSetting('translate.provider') || TASK_DEFAULTS.translate.provider
   const targetLang = getTargetLang(targetLangOverride)
   const sourceLang = getSetting('translate.source_lang') || null
@@ -184,11 +187,11 @@ export async function translateTitle(title: string, targetLangOverride?: string 
   ) ?? `Translate the following article title${sourceLangName ? ` from ${sourceLangName}` : ''} into ${targetLangName}. Keep proper nouns, brand names, product names, and technical terms in their original form. Output only the translated title, nothing else.`
   const prompt = `${instruction}\n\n${title}`
   const config: AiTaskConfig = { ...translateConfig, buildPrompt: () => prompt }
-  const r = await runAiTask(config, title)
+  const r = await runAiTask(config, title, undefined, sessionId)
   return r.text.trim()
 }
 
-export async function translateArticle(fullText: string, targetLangOverride?: string | null): Promise<{ fullTextTranslated: string } & AiTextResult> {
+export async function translateArticle(fullText: string, targetLangOverride?: string | null, sessionId?: string): Promise<{ fullTextTranslated: string } & AiTextResult> {
   const provider = getSetting('translate.provider') || TASK_DEFAULTS.translate.provider
   if (provider === 'google-translate') {
     return runGoogleTranslate(fullText, targetLangOverride)
@@ -197,7 +200,7 @@ export async function translateArticle(fullText: string, targetLangOverride?: st
     return runDeepl(fullText, targetLangOverride)
   }
   const config: AiTaskConfig = { ...translateConfig, buildPrompt: (text: string) => buildTranslatePrompt(text, targetLangOverride) }
-  const r = await runAiTask(config, fullText)
+  const r = await runAiTask(config, fullText, undefined, sessionId)
   return { fullTextTranslated: r.text, inputTokens: r.inputTokens, outputTokens: r.outputTokens, billingMode: r.billingMode, model: r.model }
 }
 
@@ -205,6 +208,7 @@ export async function streamTranslateArticle(
   fullText: string,
   onText: (delta: string) => void,
   targetLangOverride?: string | null,
+  sessionId?: string,
 ): Promise<{ fullTextTranslated: string } & AiTextResult> {
   const provider = getSetting('translate.provider') || TASK_DEFAULTS.translate.provider
   if (provider === 'google-translate') {
@@ -218,7 +222,7 @@ export async function streamTranslateArticle(
     return result
   }
   const config: AiTaskConfig = { ...translateConfig, buildPrompt: (text: string) => buildTranslatePrompt(text, targetLangOverride) }
-  const r = await runAiTask(config, fullText, onText)
+  const r = await runAiTask(config, fullText, onText, sessionId)
   return { fullTextTranslated: r.text, inputTokens: r.inputTokens, outputTokens: r.outputTokens, billingMode: r.billingMode, model: r.model }
 }
 

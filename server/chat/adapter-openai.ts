@@ -89,7 +89,7 @@ function convertResponseToNeutral(
 export async function runOpenAITurn(
   params: ChatTurnParams,
   externalClient?: OpenAI,
-  opts?: { noTools?: boolean },
+  opts?: { noTools?: boolean; headers?: Record<string, string> },
 ): Promise<RunChatTurnResult> {
   if (!externalClient && !getSetting('api_key.openai')) {
     throw new Error('OPENAI_KEY_NOT_SET')
@@ -112,7 +112,7 @@ export async function runOpenAITurn(
       ...(tools ? { tools } : {}),
       stream: true,
       stream_options: { include_usage: true },
-    })
+    }, opts?.headers ? { headers: opts.headers } : undefined)
 
     // Accumulate streamed response
     let responseText = ''

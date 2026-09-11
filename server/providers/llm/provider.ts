@@ -3,6 +3,8 @@ export interface LLMMessageParams {
   maxTokens: number
   messages: Array<{ role: string; content: string }>
   systemInstruction?: string
+  /** Stable per-conversation id, forwarded by gateways that require routing hints. */
+  sessionId?: string
 }
 
 export interface LLMStreamResult {

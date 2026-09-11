@@ -990,10 +990,10 @@ export async function settingsRoutes(api: FastifyInstance): Promise<void> {
   const OPENCODE_GATEWAYS = ['opencode-zen', 'opencode-go'] as const
 
   async function opCodeFetch(gateway: 'opencode-zen' | 'opencode-go', path: string): Promise<Response> {
-    const { getOpenCodeApiKey, getOpenCodeBaseUrl } = await import('../providers/llm/opencode-gateway.js')
+    const { getOpenCodeApiKey, getOpenCodeBaseUrl, getOpenCodeRequestHeaders } = await import('../providers/llm/opencode-gateway.js')
     const apiKey = getOpenCodeApiKey(gateway)
     const baseUrl = getOpenCodeBaseUrl(gateway).replace(/\/+$/, '').replace(/\/v1$/, '')
-    const headers: Record<string, string> = {}
+    const headers: Record<string, string> = getOpenCodeRequestHeaders(gateway)
     if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`
     return fetch(`${baseUrl}${path}`, { headers, signal: AbortSignal.timeout(10_000) })
   }

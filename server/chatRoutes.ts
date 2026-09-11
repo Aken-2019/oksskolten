@@ -118,6 +118,7 @@ export function registerChatApi(app: FastifyInstance): void {
           system: systemPrompt,
           model,
           timeZone: body.timeZone,
+          sessionId: conversationId,
           onEvent: (event) => {
             if (event.type === 'done') {
               sse.send({ ...event, elapsed_ms: Date.now() - startTime, model })
