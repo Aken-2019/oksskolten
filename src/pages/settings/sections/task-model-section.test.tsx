@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, waitFor } from '@testing-library/react'
 
-import { TaskModelSection } from './task-model-section'
+import { TaskModelSection, defaultModelForProvider } from './task-model-section'
 import type { Settings } from '../../../hooks/use-settings'
 import type { TranslateFn } from '../../../lib/i18n'
 
@@ -93,5 +93,18 @@ describe('TaskModelSection — dynamic model lists for OpenCode gateways', () =>
     await waitFor(() => {
       expect(mockSetTranslateModel).toHaveBeenCalledWith('glm-5')
     })
+  })
+})
+
+describe('defaultModelForProvider', () => {
+  it('starts empty for providers with a dynamic model list (auto-select fills a real model)', () => {
+    for (const p of ['ollama', 'vllm', 'mimo', 'custom', 'opencode-zen', 'opencode-go', 'custom-abc']) {
+      expect(defaultModelForProvider(p)).toBe('')
+    }
+  })
+
+  it('uses the catalogue default for providers with a static list', () => {
+    expect(defaultModelForProvider('anthropic')).toBe('claude-haiku-4-5-20251001')
+    expect(defaultModelForProvider('openai')).toBe('gpt-4.1-mini')
   })
 })

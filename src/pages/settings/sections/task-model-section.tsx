@@ -186,8 +186,7 @@ export function TaskModelSection({ settings, t, hiddenProviders }: { settings: S
       providerValue: settings.chatProvider || '',
           setProvider: (v) => {
             settings.setChatProvider(v)
-            if (v !== 'ollama' && v !== 'vllm' && v !== 'mimo' && v !== 'custom' && !v.startsWith('custom-')) settings.setChatModel(DEFAULT_MODELS[v] || DEFAULT_MODELS.anthropic)
-            else settings.setChatModel('')
+            settings.setChatModel(defaultModelForProvider(v))
           },
       modelValue: settings.chatModel || '',
       setModel: settings.setChatModel,
@@ -198,8 +197,7 @@ export function TaskModelSection({ settings, t, hiddenProviders }: { settings: S
       providerValue: settings.summaryProvider || '',
       setProvider: (v) => {
         settings.setSummaryProvider(v)
-        if (v !== 'ollama' && v !== 'vllm' && v !== 'mimo' && v !== 'custom' && !v.startsWith('custom-')) settings.setSummaryModel(DEFAULT_MODELS[v] || DEFAULT_MODELS.anthropic)
-        else settings.setSummaryModel('')
+        settings.setSummaryModel(defaultModelForProvider(v))
       },
       modelValue: settings.summaryModel || '',
       setModel: settings.setSummaryModel,
@@ -218,8 +216,7 @@ export function TaskModelSection({ settings, t, hiddenProviders }: { settings: S
       providerValue: settings.translateProvider || '',
       setProvider: (v) => {
         settings.setTranslateProvider(v)
-        if (v !== 'ollama' && v !== 'vllm' && v !== 'mimo' && v !== 'custom' && !v.startsWith('custom-')) settings.setTranslateModel(DEFAULT_MODELS[v] || DEFAULT_MODELS.anthropic)
-        else settings.setTranslateModel('')
+        settings.setTranslateModel(defaultModelForProvider(v))
       },
       modelValue: settings.translateModel || '',
       setModel: settings.setTranslateModel,
@@ -334,6 +331,21 @@ function LangRadioRow({ label, value, onChange, autoLabel, t }: {
         })}
     </div>
   )
+}
+
+/**
+ * Model to preselect when a task switches to `provider`.
+ * Providers whose model list is discovered at runtime start empty so the
+ * auto-select effect can pick the first real model; providers with a static
+ * catalogue use their default.
+ */
+export function defaultModelForProvider(provider: string): string {
+  if (
+    provider === 'ollama' || provider === 'vllm' || provider === 'mimo'
+    || provider === 'custom' || provider === 'opencode-zen' || provider === 'opencode-go'
+    || provider.startsWith('custom-')
+  ) return ''
+  return DEFAULT_MODELS[provider] || DEFAULT_MODELS.anthropic
 }
 
 function getModelGroups(provider: string): ModelGroup[] {

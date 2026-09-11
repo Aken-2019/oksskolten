@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import { setupTestDb } from '../__tests__/helpers/testDb.js'
 import { bindNamedParams, runNamed, getNamed, allNamed, getDb, runMigrations } from './connection.js'
 import { createFeed } from './feeds.js'
+import { getSetting, upsertSetting } from './settings.js'
 
 beforeEach(() => {
   setupTestDb()
@@ -136,6 +137,36 @@ describe('runMigrations', () => {
 
     const rows = db.prepare("SELECT url FROM articles WHERE url = 'https://x.example/kiji/a'").all() as { url: string }[]
     expect(rows).toHaveLength(1) // exactly one survives
+  })
+
+  it('0010 defaults task providers to an OpenCode gateway once its key is configured', () => {
+    const db = getDb()
+    const rerun = () => {
+      db.prepare("DELETE FROM _migrations WHERE name = '0010_default_provider_from_key.sql'").run()
+      runMigrations()
+    }
+
+    // Before the key exists the migration leaves providers unset.
+    rerun()
+    expect(getSetting('chat.provider')).toBeUndefined()
+
+    upsertSetting('api_key.opencode_go', 'sk-test')
+    rerun()
+    expect(getSetting('chat.provider')).toBe('opencode-go')
+    expect(getSetting('summary.provider')).toBe('opencode-go')
+    expect(getSetting('translate.provider')).toBe('opencode-go')
+    expect(getSetting('chat.model')).toBe('glm-5')
+    expect(getSetting('translate.model')).toBe('glm-5')
+  })
+
+  it('0010 never overwrites an explicit provider choice', () => {
+    const db = getDb()
+    upsertSetting('api_key.opencode_go', 'sk-test')
+    upsertSetting('chat.provider', 'anthropic')
+    db.prepare("DELETE FROM _migrations WHERE name = '0010_default_provider_from_key.sql'").run()
+    runMigrations()
+
+    expect(getSetting('chat.provider')).toBe('anthropic')
   })
 })
 
