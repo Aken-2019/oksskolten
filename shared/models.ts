@@ -69,11 +69,40 @@ export const DEEPSEEK_MODELS: ModelGroup[] = [
   ]},
 ]
 
+// OpenCode gateways bill via gateway credits, not per-model API pricing —
+// static lists are only a fallback for when /v1/models is unreachable.
+export const OPENCODE_ZEN_MODELS: ModelGroup[] = [
+  { group: 'Free', models: [
+    { value: 'glm-5', label: 'GLM 5', pricing: [0, 0] },
+    { value: 'glm-5.2', label: 'GLM 5.2', pricing: [0, 0] },
+    { value: 'kimi-k2.5', label: 'Kimi K2.5', pricing: [0, 0] },
+    { value: 'minimax-m2.5', label: 'MiniMax M2.5', pricing: [0, 0] },
+    { value: 'deepseek-v4-flash-free', label: 'DeepSeek V4 Flash Free', pricing: [0, 0] },
+  ]},
+  { group: 'Latest', models: [
+    { value: 'gpt-5.5', label: 'GPT-5.5', pricing: [0, 0] },
+    { value: 'claude-sonnet-4-6', label: 'Claude Sonnet 4.6', pricing: [0, 0] },
+    { value: 'claude-haiku-4-5', label: 'Claude Haiku 4.5', pricing: [0, 0] },
+    { value: 'gemini-3-flash', label: 'Gemini 3 Flash', pricing: [0, 0] },
+    { value: 'grok-4.5', label: 'Grok 4.5', pricing: [0, 0] },
+  ]},
+]
+
+export const OPENCODE_GO_MODELS: ModelGroup[] = [
+  { group: 'Standard', models: [
+    { value: 'glm-5', label: 'GLM 5', pricing: [0, 0] },
+    { value: 'kimi-k2.5', label: 'Kimi K2.5', pricing: [0, 0] },
+    { value: 'deepseek-v4-flash', label: 'DeepSeek V4 Flash', pricing: [0, 0] },
+  ]},
+]
+
 export const MODELS_BY_PROVIDER: Record<string, ModelGroup[]> = {
   anthropic: ANTHROPIC_MODELS,
   gemini: GEMINI_MODELS,
   openai: OPENAI_MODELS,
   deepseek: DEEPSEEK_MODELS,
+  'opencode-zen': OPENCODE_ZEN_MODELS,
+  'opencode-go': OPENCODE_GO_MODELS,
 }
 
 export const DEFAULT_MODELS: Record<string, string> = {
@@ -83,6 +112,8 @@ export const DEFAULT_MODELS: Record<string, string> = {
   deepseek: 'deepseek-chat',
   mimo: '',
   custom: '',
+  'opencode-zen': '',
+  'opencode-go': '',
   'claude-code': 'claude-haiku-4-5-20251001',
   ollama: '',
   vllm: '',
@@ -97,7 +128,7 @@ export const TASK_DEFAULTS = {
 } as const
 
 /** LLM providers that require an API key */
-export const LLM_API_PROVIDERS = ['anthropic', 'gemini', 'openai', 'deepseek', 'mimo'] as const
+export const LLM_API_PROVIDERS = ['anthropic', 'gemini', 'openai', 'deepseek', 'mimo', 'opencode-zen', 'opencode-go'] as const
 
 /** Translation service providers that require an API key */
 export const TRANSLATE_SERVICE_PROVIDERS = ['google-translate', 'deepl'] as const
@@ -111,6 +142,8 @@ export const PROVIDER_LABELS: Record<string, string> = {
   openai: 'provider.openai',
   deepseek: 'provider.deepseek',
   mimo: 'provider.mimo',
+  'opencode-zen': 'provider.opencodeZen',
+  'opencode-go': 'provider.opencodeGo',
   custom: 'provider.custom',
   'claude-code': 'provider.claudeCode',
   ollama: 'provider.ollama',
@@ -127,6 +160,8 @@ export const SUB_AGENT_MODELS: Record<string, string> = {
   deepseek: 'deepseek-chat',
   mimo: '',
   custom: '',
+  'opencode-zen': '',
+  'opencode-go': '',
   'claude-code': 'claude-haiku-4-5-20251001',
   ollama: '',
   vllm: '',

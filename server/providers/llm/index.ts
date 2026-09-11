@@ -5,6 +5,7 @@ import { customProvider, getCustomProviderById, isCustomProviderId } from './cus
 import { deepseekProvider } from './deepseek.js'
 import { geminiProvider } from './gemini.js'
 import { mimoProvider } from './mimo.js'
+import { makeOpCodeProvider } from './opencode-gateway.js'
 import { ollamaProvider } from './ollama.js'
 import { openaiProvider } from './openai.js'
 import { vllmProvider } from './vllm.js'
@@ -20,6 +21,8 @@ providers.set('vllm', vllmProvider)
 providers.set('deepseek', deepseekProvider)
 providers.set('mimo', mimoProvider)
 providers.set('custom', customProvider)
+providers.set('opencode-zen', makeOpCodeProvider('opencode-zen'))
+providers.set('opencode-go', makeOpCodeProvider('opencode-go'))
 
 export function getProvider(name: string): LLMProvider {
   if (isCustomProviderId(name)) {

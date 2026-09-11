@@ -80,6 +80,8 @@ const PREF_KEYS = [
   'anthropic.base_url',
   'deepseek.base_url',
   'mimo.base_url',
+  'opencode_zen.base_url',
+  'opencode_go.base_url',
   'openai.base_url',
   'gemini.base_url',
 ] as const
@@ -102,16 +104,16 @@ const PREF_ALLOWED: Record<PrefKey, string[] | null> = {
   'appearance.highlight_theme': null,
   'appearance.font_family': null,
   'appearance.list_layout': ['list', 'card', 'magazine', 'compact'],
-  'chat.provider': ['anthropic', 'gemini', 'openai', 'claude-code', 'ollama', 'vllm', 'deepseek', 'mimo', 'custom'],
+  'chat.provider': ['anthropic', 'gemini', 'openai', 'claude-code', 'ollama', 'vllm', 'deepseek', 'mimo', 'opencode-zen', 'opencode-go', 'custom'],
   'chat.model': null,
-  'summary.provider': ['anthropic', 'gemini', 'openai', 'claude-code', 'ollama', 'vllm', 'deepseek', 'mimo', 'custom'],
+  'summary.provider': ['anthropic', 'gemini', 'openai', 'claude-code', 'ollama', 'vllm', 'deepseek', 'mimo', 'opencode-zen', 'opencode-go', 'custom'],
   'summary.model': null,
   'summary.max_tokens': null,
   'summary.auto': ['on', 'off'],
   'summary.target_lang': ['ja', 'en', 'zh'],
   'translate.auto': ['on', 'off'],
   'translate.title_auto': ['on', 'off'],
-  'translate.provider': ['anthropic', 'gemini', 'openai', 'claude-code', 'ollama', 'vllm', 'google-translate', 'deepl', 'deepseek', 'mimo', 'custom'],
+  'translate.provider': ['anthropic', 'gemini', 'openai', 'claude-code', 'ollama', 'vllm', 'google-translate', 'deepl', 'deepseek', 'mimo', 'opencode-zen', 'opencode-go', 'custom'],
   'translate.model': null,
   'translate.max_tokens': null,
   'translate.target_lang': ['ja', 'en', 'zh'],
@@ -129,6 +131,8 @@ const PREF_ALLOWED: Record<PrefKey, string[] | null> = {
   'anthropic.base_url': null,
   'deepseek.base_url': null,
   'mimo.base_url': null,
+  'opencode_zen.base_url': null,
+  'opencode_go.base_url': null,
   'openai.base_url': null,
   'gemini.base_url': null,
 }
@@ -230,8 +234,8 @@ function validateProviderModel(body: Record<string, unknown>): string | null {
       }
       continue
     }
-    // google-translate, deepl, ollama, deepseek, and vllm have no static model list
-    if (provider === 'google-translate' || provider === 'deepl' || provider === 'ollama' || provider === 'deepseek' || provider === 'vllm') continue
+    // google-translate, deepl, ollama, deepseek, opencode gateways, and vllm have no static model list
+    if (provider === 'google-translate' || provider === 'deepl' || provider === 'ollama' || provider === 'deepseek' || provider === 'opencode-zen' || provider === 'opencode-go' || provider === 'vllm') continue
     // claude-code uses anthropic model IDs
     const effectiveProvider = provider === 'claude-code' ? 'anthropic' : provider
     const allowedModels = getModelValues(effectiveProvider)
@@ -371,6 +375,8 @@ export async function settingsRoutes(api: FastifyInstance): Promise<void> {
             || provider === 'vllm'
             || provider === 'deepseek'
             || provider === 'mimo'
+            || provider === 'opencode-zen'
+            || provider === 'opencode-go'
             || provider === 'custom'
             || isCustomProviderIdValue(provider || '')
           ) {
@@ -720,6 +726,8 @@ export async function settingsRoutes(api: FastifyInstance): Promise<void> {
     deepl: 'api_key.deepl',
     deepseek: 'api_key.deepseek',
     mimo: 'api_key.mimo',
+    'opencode-zen': 'api_key.opencode_zen',
+    'opencode-go': 'api_key.opencode_go',
   }
 
   function resolveProviderApiKeySetting(provider: string): string | null {
@@ -963,6 +971,60 @@ export async function settingsRoutes(api: FastifyInstance): Promise<void> {
       reply.send({ ok: false, error: message })
     }
   })
+
+  // --- OpenCode gateway endpoints (zen + go) ---
+
+  const OPENCODE_GATEWAYS = ['opencode-zen', 'opencode-go'] as const
+
+  async function opCodeFetch(gateway: 'opencode-zen' | 'opencode-go', path: string): Promise<Response> {
+    const { getOpenCodeApiKey, getOpenCodeBaseUrl } = await import('../providers/llm/opencode-gateway.js')
+    const apiKey = getOpenCodeApiKey(gateway)
+    const baseUrl = getOpenCodeBaseUrl(gateway).replace(/\/+$/, '').replace(/\/v1$/, '')
+    const headers: Record<string, string> = {}
+    if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`
+    return fetch(`${baseUrl}${path}`, { headers, signal: AbortSignal.timeout(10_000) })
+  }
+
+  for (const gateway of OPENCODE_GATEWAYS) {
+    api.get(`/api/settings/${gateway}/models`, async (_request, reply) => {
+      try {
+        const res = await opCodeFetch(gateway, '/v1/models')
+        if (!res.ok) {
+          reply.send({ models: [] })
+          return
+        }
+        const data = await res.json() as { data?: Array<{ id: string }> }
+        const models = (data.data || []).map(m => ({ name: m.id }))
+        reply.send({ models })
+      } catch {
+        reply.send({ models: [] })
+      }
+    })
+
+    api.get(`/api/settings/${gateway}/status`, async (_request, reply) => {
+      try {
+        const { getOpenCodeApiKey } = await import('../providers/llm/opencode-gateway.js')
+        if (!getOpenCodeApiKey(gateway)) {
+          reply.send({ ok: false, error: 'API key not configured' })
+          return
+        }
+        const res = await opCodeFetch(gateway, '/v1/models')
+        if (!res.ok) {
+          reply.send({ ok: false, error: `HTTP ${res.status}` })
+          return
+        }
+        const data = await res.json() as { data?: unknown[] }
+        if (!Array.isArray(data.data)) {
+          reply.send({ ok: false, error: 'Unexpected OpenCode gateway response format' })
+          return
+        }
+        reply.send({ ok: true, model_count: data.data?.length || 0 })
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : 'Connection failed'
+        reply.send({ ok: false, error: message })
+      }
+    })
+  }
 
   // --- Custom provider registry endpoints ---
 

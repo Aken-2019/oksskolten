@@ -57,6 +57,8 @@ export function TaskModelSection({ settings, t, hiddenProviders }: { settings: S
   const openaiKey = useSWR<{ configured: boolean }>(`/api/settings/api-keys/openai`, fetcher, SWR_KEY_OPTS)
   const deepseekKey = useSWR<{ configured: boolean }>(`/api/settings/api-keys/deepseek`, fetcher, SWR_KEY_OPTS)
   const mimoKey = useSWR<{ configured: boolean }>(`/api/settings/api-keys/mimo`, fetcher, SWR_KEY_OPTS)
+  const opencodeZenKey = useSWR<{ configured: boolean }>(`/api/settings/api-keys/opencode-zen`, fetcher, SWR_KEY_OPTS)
+  const opencodeGoKey = useSWR<{ configured: boolean }>(`/api/settings/api-keys/opencode-go`, fetcher, SWR_KEY_OPTS)
   const customPrefs = useSWR<Record<string, string | null>>('/api/settings/preferences', fetcher, SWR_KEY_OPTS)
   const { data: customProvidersList } = useSWR<{ providers: StoredCustomProvider[] }>(
     '/api/settings/custom-providers', fetcher, SWR_KEY_OPTS,
@@ -69,7 +71,7 @@ export function TaskModelSection({ settings, t, hiddenProviders }: { settings: S
     '/api/chat/claude-code-status', fetcher, SWR_KEY_OPTS,
   )
 
-  const llmKeyStatuses = [anthropicKey, geminiKey, openaiKey, deepseekKey, mimoKey]
+  const llmKeyStatuses = [anthropicKey, geminiKey, openaiKey, deepseekKey, mimoKey, opencodeZenKey, opencodeGoKey]
   const translateKeyStatuses = [googleTranslateKey, deeplKey]
 
   const claudeCodeReady = !!claudeCodeStatus?.loggedIn
@@ -125,6 +127,7 @@ export function TaskModelSection({ settings, t, hiddenProviders }: { settings: S
   }, [
     anthropicKey.data?.configured, geminiKey.data?.configured, openaiKey.data?.configured,
     deepseekKey.data?.configured, mimoKey.data?.configured,
+    opencodeZenKey.data?.configured, opencodeGoKey.data?.configured,
     customBaseUrl, customModels,
     googleTranslateKey.data?.configured, deeplKey.data?.configured, claudeCodeReady,
     googleTranslateStatus.data?.ok, deeplStatus.data?.ok,

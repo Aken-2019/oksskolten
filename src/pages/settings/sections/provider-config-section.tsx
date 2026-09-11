@@ -19,6 +19,8 @@ const HIDEABLE_LLM_PROVIDERS = new Set([
   'openai',
   'deepseek',
   'mimo',
+  'opencode-zen',
+  'opencode-go',
   'claude-code',
   'ollama',
   'vllm',

@@ -788,6 +788,8 @@ const dict = {
   'provider.deepl': { ja: 'DeepL', en: 'DeepL', zh: 'DeepL'},
   'provider.deepseek': { ja: 'DeepSeek', en: 'DeepSeek', zh: 'DeepSeek'},
   'provider.mimo': { ja: 'Mimo', en: 'Mimo', zh: 'Mimo'},
+  'provider.opencodeZen': { ja: 'OpenCode Zen', en: 'OpenCode Zen', zh: 'OpenCode Zen'},
+  'provider.opencodeGo': { ja: 'OpenCode Go', en: 'OpenCode Go', zh: 'OpenCode Go'},
   'provider.custom': { ja: 'カスタムプロバイダー', en: 'Custom Provider', zh: '自定义提供商'},
 
   // DeepSeek
