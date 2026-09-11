@@ -60,16 +60,34 @@ describe('detectLanguage', () => {
     expect(detectLanguage(ja + en)).toBe('ja')
   })
 
-  it('returns "en" when CJK ratio is at boundary (<=10%)', () => {
-    // 10 CJK chars + 90 ASCII = 10% → not > 10% → "en"
-    const text = 'あ'.repeat(10) + 'a'.repeat(90)
+  it('returns "ja" when kana ratio is just above 2%', () => {
+    // 3 kana + 97 ASCII = 3% kana > 2% → "ja"
+    const text = 'あ'.repeat(3) + 'a'.repeat(97)
+    expect(detectLanguage(text)).toBe('ja')
+  })
+
+  it('returns "en" when kana ratio is at the 2% boundary', () => {
+    // 2 kana + 98 ASCII = 2% kana → not > 2%; no CJK → "en"
+    const text = 'あ'.repeat(2) + 'a'.repeat(98)
     expect(detectLanguage(text)).toBe('en')
   })
 
-  it('returns "ja" when CJK ratio is just above 10%', () => {
-    // 11 CJK chars + 89 ASCII = 11% → > 10% → "ja"
-    const text = 'あ'.repeat(11) + 'a'.repeat(89)
-    expect(detectLanguage(text)).toBe('ja')
+  it('returns "zh" for CJK-only text without kana', () => {
+    // 20 kanji + 80 ASCII = 20% CJK, no kana → "zh"
+    const text = '中'.repeat(20) + 'a'.repeat(80)
+    expect(detectLanguage(text)).toBe('zh')
+  })
+
+  it('returns "en" when CJK-only ratio is at boundary (<=10%)', () => {
+    // 10 kanji + 90 ASCII = 10% CJK → not > 10% → "en"
+    const text = '中'.repeat(10) + 'a'.repeat(90)
+    expect(detectLanguage(text)).toBe('en')
+  })
+
+  it('returns "zh" when CJK-only ratio is just above 10%', () => {
+    // 11 kanji + 89 ASCII = 11% CJK → > 10% → "zh"
+    const text = '中'.repeat(11) + 'a'.repeat(89)
+    expect(detectLanguage(text)).toBe('zh')
   })
 
   it('detects kanji-heavy text as Japanese', () => {
