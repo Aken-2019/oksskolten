@@ -925,3 +925,75 @@ describe('vLLM endpoints', () => {
     expect(getSetting('vllm.base_url')).toBe('http://vllm:8000')
   })
 })
+
+describe('PATCH /api/settings/preferences — custom prompt settings', () => {
+  const PROMPT_KEYS = ['summary.prompt', 'translate.prompt', 'translate.title_prompt'] as const
+
+  it('accepts and round-trips custom prompts', async () => {
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/api/settings/preferences',
+      headers: json,
+      payload: {
+        'summary.prompt': 'Summarize like a haiku about {language}.',
+        'translate.prompt': 'Go {source_language} → {language}.',
+        'translate.title_prompt': 'Short title, keep brands.',
+      },
+    })
+    expect(res.statusCode).toBe(200)
+    expect(res.json()['summary.prompt']).toBe('Summarize like a haiku about {language}.')
+    expect(res.json()['translate.prompt']).toBe('Go {source_language} → {language}.')
+    expect(res.json()['translate.title_prompt']).toBe('Short title, keep brands.')
+  })
+
+  it('clears a custom prompt with an empty string', async () => {
+    await app.inject({
+      method: 'PATCH',
+      url: '/api/settings/preferences',
+      headers: json,
+      payload: { 'summary.prompt': 'x' },
+    })
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/api/settings/preferences',
+      headers: json,
+      payload: { 'summary.prompt': '' },
+    })
+    expect(res.statusCode).toBe(200)
+    expect(res.json()['summary.prompt']).toBeNull()
+  })
+
+  it('exposes prompt keys in the preferences GET payload', async () => {
+    await app.inject({
+      method: 'PATCH',
+      url: '/api/settings/preferences',
+      headers: json,
+      payload: { 'translate.prompt': 'custom' },
+    })
+    const res = await app.inject({ method: 'GET', url: '/api/settings/preferences' })
+    expect(res.statusCode).toBe(200)
+    const data = res.json()
+    for (const key of PROMPT_KEYS) expect(data).toHaveProperty(key)
+    expect(data['translate.prompt']).toBe('custom')
+  })
+
+  it.each(PROMPT_KEYS)('rejects prompts over 4000 chars (%s)', async (key) => {
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/api/settings/preferences',
+      headers: json,
+      payload: { [key]: 'a'.repeat(4001) },
+    })
+    expect(res.statusCode).toBe(400)
+  })
+
+  it.each(PROMPT_KEYS)('accepts prompts up to 4000 chars (%s)', async (key) => {
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/api/settings/preferences',
+      headers: json,
+      payload: { [key]: 'a'.repeat(4000) },
+    })
+    expect(res.statusCode).toBe(200)
+  })
+})

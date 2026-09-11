@@ -993,6 +993,11 @@ const dict = {
   // Upstream-only keys (merged from origin/main)
   'integration.maxTokens': { ja: '最大出力トークン数', en: 'Max output tokens', zh: '最大输出 token 数'},
   'integration.maxTokensDesc': { ja: '空欄でデフォルト値を使用。コンテキスト長が短いローカルLLMでは小さくしてください', en: 'Empty uses the default. Lower this for local LLMs with small context windows', zh: '留空使用默认值。上下文窗口较小的本地 LLM 请调低此值'},
+  'integration.customPrompt': { ja: 'カスタムプロンプト', en: 'Custom prompt', zh: '自定义 Prompt'},
+  'integration.customPromptActive': { ja: '（カスタム使用中）', en: '(custom in use)', zh: '（已启用）'},
+  'integration.customPromptDesc': { ja: '本文は自動で末尾に付与されます。{language}＝出力言語、{source_language}＝検出または指定した元言語。空欄でデフォルトを使用', en: 'The article body is appended automatically. {language} = output language, {source_language} = detected or configured source. Leave empty to use the default', zh: '文章正文会自动附加在末尾。{language} = 输出语言，{source_language} = 检测或指定的源语言。留空使用默认'},
+  'integration.customPromptPlaceholder': { ja: '空欄 = 内蔵のデフォルト指示', en: 'Empty = built-in default instructions', zh: '留空 = 使用内置默认指令'},
+  'integration.customPromptReset': { ja: 'デフォルトに戻す', en: 'Reset to default', zh: '恢复默认'},
   'chat.apiKeyConfigured': { ja: '設定済み', en: 'Configured', zh: '已配置'},
   'ollama.testing': { ja: 'テスト中...', en: 'Testing...', zh: '测试中...'},
   'vllm.testing': { ja: 'テスト中...', en: 'Testing...', zh: '测试中...'},

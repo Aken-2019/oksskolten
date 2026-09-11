@@ -26,9 +26,29 @@ export function detectLanguage(fullText: string): string {
 }
 
 
+/**
+ * Resolve the instruction area for an AI task prompt. A custom instruction
+ * (stored whole in `promptKey`) replaces the built-in instruction; `{language}`
+ * and `{source_language}` placeholders are substituted at build time so the
+ * stored template stays language-agnostic. Blank/absent values fall back to
+ * the built-in default (returned as null so callers can use their default).
+ */
+function customInstruction(
+  promptKey: string,
+  language: string,
+  sourceLanguage?: string | null,
+): string | null {
+  const raw = getSetting(promptKey)
+  if (!raw || !raw.trim()) return null
+  return raw
+    .trim()
+    .replaceAll('{language}', language)
+    .replaceAll('{source_language}', sourceLanguage ?? 'auto-detected')
+}
+
 function buildSummarizePrompt(fullText: string): string {
   const lang = getSetting('summary.target_lang') || getSetting('general.language') || DEFAULT_LANGUAGE
-  return `Summarize the following article in ${languageName(lang)}. Follow the format strictly.
+  const instruction = customInstruction('summary.prompt', languageName(lang)) ?? `Summarize the following article in ${languageName(lang)}. Follow the format strictly.
 
 ## Format
 Line 1: A concise 1-2 sentence summary of the article's main point (what the article is about and the author's key argument or conclusion)
@@ -40,25 +60,21 @@ Line 3+: Key points as bullet points. Each item should follow the format "**Poin
 - Maintain the order of the article's flow
 - Minimize the number of points (3-4 is ideal). Only add more if the content is truly wide-ranging, but never exceed 7
 - Output in Markdown (bullet points start with "- ")
-- Do not include any text other than the summary (no headings, preambles, or notes)
-
---- Article body ---
-${fullText}`
+- Do not include any text other than the summary (no headings, preambles, or notes)`
+  return `${instruction}\n\n--- Article body ---\n${fullText}`
 }
 
 function buildTranslatePrompt(fullText: string): string {
   const target = getTargetLang()
   const source = getSetting('translate.source_lang') || null
-  const sourceLang = source && source !== target ? ` from ${languageName(source)}` : ''
   const targetLang = languageName(target)
-  return `Translate the following article${sourceLang} into ${targetLang}.
+  const sourceLang = source && source !== target ? languageName(source) : null
+  const instruction = customInstruction('translate.prompt', targetLang, sourceLang) ?? `Translate the following article${sourceLang ? ` from ${sourceLang}` : ''} into ${targetLang}.
 Translate every word faithfully — do not summarize, compress, or omit anything.
 The translation must be 1:1 with the original text in volume.
 Preserve Markdown formatting. In particular, keep blockquote lines starting with ">".
-Output ONLY the ${targetLang} translation. Do not include the original text or any commentary.
-
---- Article body ---
-${fullText}`
+Output ONLY the ${targetLang} translation. Do not include the original text or any commentary.`
+  return `${instruction}\n\n--- Article body ---\n${fullText}`
 }
 
 interface AiTaskConfig {
@@ -159,8 +175,14 @@ export async function translateTitle(title: string): Promise<string> {
     const result = await deeplTranslate(title, targetLang, sourceLang)
     return result.translatedText
   }
-  const source = sourceLang && sourceLang !== targetLang ? ` from ${languageName(sourceLang)}` : ''
-  const prompt = `Translate the following article title${source} into ${languageName(targetLang)}. Keep proper nouns, brand names, product names, and technical terms in their original form. Output only the translated title, nothing else.\n\n${title}`
+  const targetLangName = languageName(targetLang)
+  const sourceLangName = sourceLang && sourceLang !== targetLang ? languageName(sourceLang) : null
+  const instruction = customInstruction(
+    'translate.title_prompt',
+    targetLangName,
+    sourceLangName,
+  ) ?? `Translate the following article title${sourceLangName ? ` from ${sourceLangName}` : ''} into ${targetLangName}. Keep proper nouns, brand names, product names, and technical terms in their original form. Output only the translated title, nothing else.`
+  const prompt = `${instruction}\n\n${title}`
   const config: AiTaskConfig = { ...translateConfig, buildPrompt: () => prompt }
   const r = await runAiTask(config, title)
   return r.text.trim()

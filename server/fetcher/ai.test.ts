@@ -30,6 +30,7 @@ import {
   streamSummarizeArticle,
   translateArticle,
   streamTranslateArticle,
+  translateTitle,
 } from './ai.js'
 
 beforeEach(() => {
@@ -304,5 +305,94 @@ describe('streamTranslateArticle', () => {
     expect(result.fullTextTranslated).toBe('ストリーム翻訳')
     expect(mockStreamMessage).toHaveBeenCalled()
     expect(mockCreateMessage).not.toHaveBeenCalled()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Custom prompt settings (summary.prompt / translate.prompt / translate.title_prompt)
+// ---------------------------------------------------------------------------
+describe('custom prompt settings', () => {
+  beforeEach(() => {
+    mockCreateMessage.mockResolvedValue({ text: 'ok', inputTokens: 0, outputTokens: 0 })
+    mockStreamMessage.mockResolvedValue({ text: 'ok', inputTokens: 0, outputTokens: 0 })
+  })
+
+  it('summarizeArticle uses summary.prompt as the instruction area with the body still appended', async () => {
+    mockGetSetting.mockImplementation((key: string) => {
+      if (key === 'summary.prompt') return 'Custom summary rules for {language}.'
+      if (key === 'summary.target_lang') return 'ja'
+      return null
+    })
+
+    await summarizeArticle('Article body text')
+
+    const content = mockCreateMessage.mock.calls[0][0].messages[0].content as string
+    expect(content).toBe('Custom summary rules for Japanese.\n\n--- Article body ---\nArticle body text')
+  })
+
+  it('summarizeArticle falls back to the default prompt for blank summary.prompt', async () => {
+    mockGetSetting.mockImplementation((key: string) => {
+      if (key === 'summary.prompt') return '   \n  '
+      return null
+    })
+
+    await summarizeArticle('text')
+
+    const content = mockCreateMessage.mock.calls[0][0].messages[0].content as string
+    expect(content).toContain('## Format')
+    expect(content).toContain('--- Article body ---')
+  })
+
+  it('translateArticle replaces {language} and {source_language} in translate.prompt', async () => {
+    mockGetSetting.mockImplementation((key: string) => {
+      if (key === 'translate.prompt') return 'Go {source_language} → {language}.'
+      if (key === 'translate.target_lang') return 'ja'
+      if (key === 'translate.source_lang') return 'en'
+      return null
+    })
+
+    await translateArticle('Body here')
+
+    const content = mockCreateMessage.mock.calls[0][0].messages[0].content as string
+    expect(content).toBe('Go English → Japanese.\n\n--- Article body ---\nBody here')
+  })
+
+  it('translateArticle uses auto-detected for {source_language} when no source lang is set', async () => {
+    mockGetSetting.mockImplementation((key: string) => {
+      if (key === 'translate.prompt') return 'Target only: {language} (source: {source_language})'
+      if (key === 'translate.target_lang') return 'ja'
+      return null
+    })
+
+    await translateArticle('Body')
+
+    const content = mockCreateMessage.mock.calls[0][0].messages[0].content as string
+    expect(content).toBe('Target only: Japanese (source: auto-detected)\n\n--- Article body ---\nBody')
+  })
+
+  it('translateArticle keeps unknown placeholders untouched', async () => {
+    mockGetSetting.mockImplementation((key: string) => {
+      if (key === 'translate.prompt') return 'Unknown {bogus} stays.'
+      return null
+    })
+
+    await translateArticle('Body')
+
+    const content = mockCreateMessage.mock.calls[0][0].messages[0].content as string
+    expect(content).toContain('Unknown {bogus} stays.')
+    expect(content).not.toContain('{bogus}.')
+  })
+
+  it('translateTitle uses translate.title_prompt instruction with the title appended', async () => {
+    mockGetSetting.mockImplementation((key: string) => {
+      if (key === 'translate.title_prompt') return 'Translate a title into {language}, keep brand names.'
+      if (key === 'translate.target_lang') return 'ja'
+      return null
+    })
+
+    await translateTitle('Hello World')
+
+    const content = mockCreateMessage.mock.calls[0][0].messages[0].content as string
+    expect(content).toBe('Translate a title into Japanese, keep brand names.\n\nHello World')
   })
 })

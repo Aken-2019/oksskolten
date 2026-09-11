@@ -60,8 +60,11 @@ const PREF_KEYS = [
   'summary.max_tokens',
   'summary.auto',
   'summary.target_lang',
+  'summary.prompt',
   'translate.auto',
   'translate.title_auto',
+  'translate.prompt',
+  'translate.title_prompt',
   'translate.provider',
   'translate.model',
   'translate.max_tokens',
@@ -111,8 +114,11 @@ const PREF_ALLOWED: Record<PrefKey, string[] | null> = {
   'summary.max_tokens': null,
   'summary.auto': ['on', 'off'],
   'summary.target_lang': ['ja', 'en', 'zh'],
+  'summary.prompt': null,
   'translate.auto': ['on', 'off'],
   'translate.title_auto': ['on', 'off'],
+  'translate.prompt': null,
+  'translate.title_prompt': null,
   'translate.provider': ['anthropic', 'gemini', 'openai', 'claude-code', 'ollama', 'vllm', 'google-translate', 'deepl', 'deepseek', 'mimo', 'opencode-zen', 'opencode-go', 'custom'],
   'translate.model': null,
   'translate.max_tokens': null,
@@ -402,6 +408,13 @@ export async function settingsRoutes(api: FastifyInstance): Promise<void> {
         const parsed = z.coerce.number().int().min(1).max(200000).safeParse(value)
         if (!parsed.success) {
           reply.status(400).send({ error: `${key} must be a positive integer (1-200000)` })
+          return
+        }
+      }
+      // Validate custom AI prompts: cap the stored size
+      if (key === 'summary.prompt' || key === 'translate.prompt' || key === 'translate.title_prompt') {
+        if (value.trim().length > 4000) {
+          reply.status(400).send({ error: `${key} must be 4000 characters or fewer` })
           return
         }
       }

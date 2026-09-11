@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, useCallback } from 'react'
 import useSWR from 'swr'
-import { fetcher } from '../../../lib/fetcher'
+import { fetcher, apiPatch } from '../../../lib/fetcher'
 import {
   ANTHROPIC_MODELS,
   GEMINI_MODELS,
@@ -46,6 +46,8 @@ interface TaskConfig {
   maxTokensValue?: string
   setMaxTokens?: (v: string) => void
   defaultMaxTokens?: number
+  /** settings key of the custom prompt instruction area (summary.prompt / translate.prompt / translate.title_prompt) */
+  promptKey?: string
 }
 
 const SWR_KEY_OPTS = { revalidateOnFocus: false } as const
@@ -73,6 +75,12 @@ export function TaskModelSection({ settings, t, hiddenProviders }: { settings: S
 
   const llmKeyStatuses = [anthropicKey, geminiKey, openaiKey, deepseekKey, mimoKey, opencodeZenKey, opencodeGoKey]
   const translateKeyStatuses = [googleTranslateKey, deeplKey]
+
+  const savePrompt = useCallback((key: string, value: string) => {
+    void apiPatch('/api/settings/preferences', { [key]: value })
+      .then(() => void customPrefs.mutate())
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [customPrefs.mutate])
 
   const claudeCodeReady = !!claudeCodeStatus?.loggedIn
   const hiddenProviderSet = useMemo(() => new Set(hiddenProviders), [hiddenProviders])
@@ -201,6 +209,7 @@ export function TaskModelSection({ settings, t, hiddenProviders }: { settings: S
       maxTokensValue: settings.summaryMaxTokens || '',
       setMaxTokens: settings.setSummaryMaxTokens,
       defaultMaxTokens: 2048,
+      promptKey: 'summary.prompt',
     },
     {
       labelKey: 'integration.task.translate',
@@ -226,6 +235,7 @@ export function TaskModelSection({ settings, t, hiddenProviders }: { settings: S
       maxTokensValue: settings.translateMaxTokens || '',
       setMaxTokens: settings.setTranslateMaxTokens,
       defaultMaxTokens: 16384,
+      promptKey: 'translate.prompt',
     },
   ]
 
@@ -272,6 +282,8 @@ export function TaskModelSection({ settings, t, hiddenProviders }: { settings: S
               customProviders={customProviders}
               customProvidersLoading={customProvidersLoading}
               customProviderNames={customProviderNames}
+              promptValue={task.promptKey ? customPrefs.data?.[task.promptKey] ?? null : undefined}
+              onSavePrompt={savePrompt}
             />
           ))}
         </div>
@@ -371,6 +383,8 @@ function TaskModelRow({
   customProviders,
   customProvidersLoading,
   customProviderNames,
+  promptValue,
+  onSavePrompt,
 }: {
   task: TaskConfig
   t: TFunc
@@ -382,6 +396,8 @@ function TaskModelRow({
   customProviders: StoredCustomProvider[]
   customProvidersLoading: boolean
   customProviderNames: Record<string, string>
+  promptValue?: string | null
+  onSavePrompt?: (key: string, value: string) => void
 }) {
   const hasTranslateServices = !!task.hasTranslateServices
   const currentIsTranslateService = isTranslateService(task.providerValue)
@@ -489,6 +505,14 @@ function TaskModelRow({
             />
           </div>
         )}
+        {task.promptKey && (
+          <CustomPromptRow
+            promptKey={task.promptKey}
+            value={promptValue}
+            onSave={onSavePrompt!}
+            t={t}
+          />
+        )}
         {hasTranslateServices && (
           <div>
             <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.04em] text-muted">
@@ -577,6 +601,49 @@ function MaxTokensInput({ task, t }: { task: TaskConfig; t: TFunc }) {
         className="w-24 text-right shrink-0"
         aria-label={t('integration.maxTokens')}
       />
+    </div>
+  )
+}
+
+/* ── Custom Prompt ── */
+
+function CustomPromptRow({ promptKey, value, onSave, t }: {
+  promptKey: string
+  value: string | null | undefined
+  onSave: (key: string, value: string) => void
+  t: TFunc
+}) {
+  const [draft, setDraft] = useState(value ?? '')
+  useEffect(() => { setDraft(value ?? '') }, [value])
+  const dirty = draft.trim() !== (value ?? '')
+  const active = !!value
+
+  return (
+    <div>
+      <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.04em] text-muted">
+        {t('integration.customPrompt')}
+        {active && <span className="ml-1.5 font-normal normal-case tracking-normal text-accent">{t('integration.customPromptActive')}</span>}
+      </div>
+      <p className="mb-1.5 text-[11px] text-muted/70">{t('integration.customPromptDesc')}</p>
+      <textarea
+        rows={3}
+        value={draft}
+        onChange={e => setDraft(e.target.value)}
+        onBlur={() => { if (dirty) onSave(promptKey, draft.trim()) }}
+        placeholder={t('integration.customPromptPlaceholder')}
+        className="w-full rounded-md border border-border bg-bg-subtle px-2 py-1.5 text-xs text-text placeholder:text-muted/60 focus:outline-none focus:border-accent resize-y select-none"
+      />
+      <div className="flex items-center justify-between mt-1">
+        <span className="text-[11px] text-muted/60">{draft.length}/4000</span>
+        <button
+          type="button"
+          disabled={!active && !dirty}
+          onClick={() => { setDraft(''); if (active) onSave(promptKey, '') }}
+          className="text-[11px] text-muted hover:text-error transition-colors select-none disabled:opacity-40"
+        >
+          {t('integration.customPromptReset')}
+        </button>
+      </div>
     </div>
   )
 }
