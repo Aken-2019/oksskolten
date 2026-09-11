@@ -57,6 +57,27 @@ window.fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Res
     })
   }
 
+  // Endpoints called via raw fetch (not the SWR demo fetcher).
+  if (method === 'GET' && path === '/api/me') {
+    return new Response(JSON.stringify({ email: 'demo@example.com' }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    })
+  }
+
+  if (method === 'GET' && path === '/api/health') {
+    return new Response(JSON.stringify({
+      ok: true,
+      searchReady: true,
+      gitCommit: 'demo',
+      gitTag: 'demo',
+      buildDate: null,
+    }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    })
+  }
+
   return originalFetch(input, init)
 }
 
