@@ -11,7 +11,8 @@ jobs:
     name: Update Coverage Badges
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    if: github.event.workflow_run.conclusion == 'success'
+    # Requires GIST_SECRET (badge gist) only present upstream
+    if: github.event.workflow_run.conclusion == 'success' && github.repository_owner == 'babarot'
     permissions:
       actions: read
     steps:

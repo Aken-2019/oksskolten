@@ -12,6 +12,8 @@ jobs:
   tagpr:
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    # Requires APP_ID / APP_PRIVATE_KEY secrets only present upstream
+    if: github.repository_owner == 'babarot'
     permissions:
       contents: write
       pull-requests: write
