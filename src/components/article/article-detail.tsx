@@ -8,7 +8,7 @@ import { queueSeenIds } from '../../lib/offlineQueue'
 import { useSWRConfig } from 'swr'
 import { trackRead } from '../../lib/readTracker'
 import { useArticleActions } from '../../hooks/use-article-actions'
-import { useI18n } from '../../lib/i18n'
+import { useI18n, APP_NAME } from '../../lib/i18n'
 import { useRewriteInternalLinks } from '../../hooks/use-rewrite-internal-links'
 import { ImageLightbox } from '../ui/image-lightbox'
 import { ChatFab } from '../chat/chat-fab'
@@ -18,6 +18,7 @@ import { useMetrics } from '../../hooks/use-metrics'
 import { useSummarize } from '../../hooks/use-summarize'
 import { useTranslate } from '../../hooks/use-translate'
 import { formatDetailDate } from '../../lib/dateFormat'
+import { useDocumentMeta } from '../../hooks/use-document-meta'
 import { useAppLayout } from '../../app'
 import { Skeleton } from '../ui/skeleton'
 import { Callout } from '../ui/callout'
@@ -126,6 +127,15 @@ export function ArticleDetail({ articleUrl }: ArticleDetailProps) {
     toggleBookmark, toggleLike, handleArchiveImages, handleDelete,
   } = useArticleActions(article, articleKey)
   const chat = useChatInline(article?.id ?? 0)
+
+  // Browser tab title/description follow the open article
+  const displayTitle = (translateTitleAuto === 'on' && !isUserLang && article?.title_translated) ? article.title_translated : article?.title
+  useDocumentMeta({
+    title: displayTitle ? `${displayTitle} · ${APP_NAME}` : APP_NAME,
+    description: article
+      ? `${formatDetailDate(article.published_at, locale)} · ${article.url}`
+      : APP_NAME,
+  })
 
   // Back-to-top visibility — throttled via RAF to avoid 60fps re-renders
   const [showBackToTop, setShowBackToTop] = useState(false)

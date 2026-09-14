@@ -54,6 +54,7 @@ const CreateFeedBody = z
 
 const UpdateFeedBody = z.object({
   name: z.string().optional(),
+  url: httpOrHttpsUrl.optional(),
   rss_bridge_url: z.string().nullable().optional(),
   disabled: z.number().optional(),
   category_id: z.number().nullable().optional(),
@@ -200,6 +201,14 @@ export async function feedRoutes(api: FastifyInstance): Promise<void> {
       if (!params) return
       const body = parseOrBadRequest(UpdateFeedBody, request.body, reply)
       if (!body) return
+
+      if (body.url !== undefined) {
+        const existing = getFeedByUrl(body.url)
+        if (existing && existing.id !== params.id) {
+          reply.status(409).send({ error: 'Feed URL already exists' })
+          return
+        }
+      }
 
       const feed = updateFeed(params.id, body)
       if (!feed) {

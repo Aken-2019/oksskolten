@@ -12,6 +12,7 @@ import {
   updateFeedError,
   updateFeedRateLimit,
   updateFeedSchedule,
+  updateFeedCacheHeaders,
 } from '../db.js'
 
 beforeEach(() => {
@@ -97,6 +98,31 @@ describe('updateFeed requires_js_challenge', () => {
 
     const updated = getFeedById(feed.id)!
     expect(updated.requires_js_challenge).toBe(0)
+  })
+})
+
+describe('updateFeed url', () => {
+  it('updates url and clears cache headers', () => {
+    const feed = seedFeed({ rss_url: 'https://example.com/feed.xml' })
+    updateFeedCacheHeaders(feed.id, '"etag-1"', 'Mon, 01 Jan 2025 00:00:00 GMT', 'hash-1')
+
+    updateFeed(feed.id, { url: 'https://newsite.com' })
+
+    const updated = getFeedById(feed.id)!
+    expect(updated.url).toBe('https://newsite.com')
+    expect(updated.etag).toBeNull()
+    expect(updated.last_modified).toBeNull()
+    expect(updated.last_content_hash).toBeNull()
+    expect(updated.next_check_at).toBeNull()
+  })
+
+  it('keeps url unchanged when not provided', () => {
+    const feed = seedFeed()
+
+    updateFeed(feed.id, { name: 'Renamed' })
+
+    const updated = getFeedById(feed.id)!
+    expect(updated.url).toBe('https://example.com')
   })
 })
 

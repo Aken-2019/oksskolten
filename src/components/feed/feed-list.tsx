@@ -16,6 +16,7 @@ import { useFeedSelection } from '../../hooks/use-feed-selection'
 import { useFeedBulkActions } from '../../hooks/use-feed-bulk-actions'
 import { useClipFeedId } from '../../hooks/use-clip-feed-id'
 import { FeedModal } from './feed-modal'
+import { EditFeedDialog } from './edit-feed-dialog'
 import { ConfirmDialog } from '../ui/confirm-dialog'
 import { FeedContextMenu, MultiSelectContextMenu, CategoryContextMenu } from './feed-context-menu'
 import { SidebarMenu } from '../layout/sidebar-menu'
@@ -81,6 +82,7 @@ export function FeedList({ isOpen, onClose, onBackdropClose, onCollapse, onMarkA
   const categories = useMemo(() => categoriesData?.categories ?? [], [categoriesData])
 
   const [feedModalOpen, setFeedModalOpen] = useState(false)
+  const [editingFeed, setEditingFeed] = useState<FeedWithCounts | null>(null)
   const [searchOpen, setSearchOpen] = useState(false)
   const [commandOpen, setCommandOpen] = useState(false)
 
@@ -363,6 +365,7 @@ export function FeedList({ isOpen, onClose, onBackdropClose, onCollapse, onMarkA
         feedType={feed.type}
         categories={categories}
         onRename={() => handleStartRenameFeed(feed)}
+        onEdit={() => setEditingFeed(feed)}
         onMarkAllRead={() => handleMarkAllReadFeed(feed)}
         onDelete={() => handleDeleteFeed(feed)}
         onMoveToCategory={(catId) => handleMoveToCategory(feed, catId)}
@@ -561,6 +564,15 @@ export function FeedList({ isOpen, onClose, onBackdropClose, onCollapse, onMarkA
       )}
 
       {searchOpen && <SearchDialog onClose={() => setSearchOpen(false)} />}
+
+      {editingFeed && (
+        <EditFeedDialog
+          feed={editingFeed}
+          categories={categories}
+          onClose={() => setEditingFeed(null)}
+          onSaved={() => mutateFeeds()}
+        />
+      )}
 
       <CommandPalette
         open={commandOpen}

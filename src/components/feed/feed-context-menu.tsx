@@ -1,5 +1,5 @@
 import { type ReactNode } from 'react'
-import { Pencil, CheckCheck, Trash2, FolderInput, RefreshCw, Search } from 'lucide-react'
+import { Pencil, CheckCheck, Trash2, FolderInput, RefreshCw, Search, Settings2 } from 'lucide-react'
 import { useI18n } from '../../lib/i18n'
 import {
   ContextMenu,
@@ -17,6 +17,7 @@ interface FeedMenuProps {
   feedType?: 'rss' | 'clip'
   categories?: Array<{ id: number; name: string }>
   onRename: () => void
+  onEdit?: () => void
   onMarkAllRead: () => void
   onDelete: () => void
   onMoveToCategory?: (categoryId: number | null) => void
@@ -29,6 +30,7 @@ export function FeedContextMenu({
   feedType,
   categories = [],
   onRename,
+  onEdit,
   onMarkAllRead,
   onDelete,
   onMoveToCategory,
@@ -48,6 +50,12 @@ export function FeedContextMenu({
           <Pencil size={16} strokeWidth={1.5} />
           {t('feeds.rename')}
         </ContextMenuItem>
+        {!isClip && onEdit && (
+          <ContextMenuItem onSelect={onEdit}>
+            <Settings2 size={16} strokeWidth={1.5} />
+            {t('feeds.edit')}
+          </ContextMenuItem>
+        )}
         <ContextMenuItem onSelect={onMarkAllRead}>
           <CheckCheck size={16} strokeWidth={1.5} />
           {t('feeds.markAllRead')}

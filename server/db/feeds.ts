@@ -86,7 +86,7 @@ export function createFeed(data: {
 
 export function updateFeed(
   id: number,
-  data: { name?: string; rss_url?: string | null; rss_bridge_url?: string | null; disabled?: number; category_id?: number | null; requires_js_challenge?: number },
+  data: { name?: string; url?: string; rss_url?: string | null; rss_bridge_url?: string | null; disabled?: number; category_id?: number | null; requires_js_challenge?: number },
 ): Feed | undefined {
   const feed = getFeedById(id)
   if (!feed) return undefined
@@ -97,6 +97,15 @@ export function updateFeed(
   if (data.name !== undefined) {
     fields.push('name = @name')
     params.name = data.name
+  }
+  if (data.url !== undefined) {
+    fields.push('url = @url')
+    params.url = data.url
+    // The site changed — cached conditional-GET state and schedule are stale
+    fields.push('etag = NULL')
+    fields.push('last_modified = NULL')
+    fields.push('last_content_hash = NULL')
+    fields.push('next_check_at = NULL')
   }
   if (data.rss_url !== undefined) {
     fields.push('rss_url = @rss_url')

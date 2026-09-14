@@ -380,6 +380,77 @@ describe('POST /api/feeds/:id/fetch', () => {
 })
 
 // ---------------------------------------------------------------------------
+// PATCH /api/feeds/:id — edit feed
+// ---------------------------------------------------------------------------
+
+describe('PATCH /api/feeds/:id', () => {
+  it('updates feed url', async () => {
+    const feed = seedFeed()
+
+    const res = await app.inject({
+      method: 'PATCH',
+      url: `/api/feeds/${feed.id}`,
+      headers: json,
+      payload: { url: 'https://newsite.com' },
+    })
+
+    expect(res.statusCode).toBe(200)
+    expect(res.json().url).toBe('https://newsite.com')
+  })
+
+  it('returns 409 when url belongs to another feed', async () => {
+    const feed = seedFeed()
+    createFeed({ name: 'Other', url: 'https://other.com' })
+
+    const res = await app.inject({
+      method: 'PATCH',
+      url: `/api/feeds/${feed.id}`,
+      headers: json,
+      payload: { url: 'https://other.com' },
+    })
+
+    expect(res.statusCode).toBe(409)
+  })
+
+  it('allows keeping the same url (no-op)', async () => {
+    const feed = seedFeed()
+
+    const res = await app.inject({
+      method: 'PATCH',
+      url: `/api/feeds/${feed.id}`,
+      headers: json,
+      payload: { url: 'https://example.com' },
+    })
+
+    expect(res.statusCode).toBe(200)
+  })
+
+  it('returns 400 for invalid url', async () => {
+    const feed = seedFeed()
+
+    const res = await app.inject({
+      method: 'PATCH',
+      url: `/api/feeds/${feed.id}`,
+      headers: json,
+      payload: { url: 'not-a-url' },
+    })
+
+    expect(res.statusCode).toBe(400)
+  })
+
+  it('returns 404 for non-existent feed', async () => {
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/api/feeds/9999',
+      headers: json,
+      payload: { url: 'https://newsite.com' },
+    })
+
+    expect(res.statusCode).toBe(404)
+  })
+})
+
+// ---------------------------------------------------------------------------
 // POST /api/feeds/:id/re-detect
 // ---------------------------------------------------------------------------
 
